@@ -6,6 +6,7 @@ pub mod config;
 pub mod derive;
 pub mod hsm;
 pub mod policy;
+pub mod replay;
 pub mod sig;
 
 pub use config::{Config, KeyDef};
