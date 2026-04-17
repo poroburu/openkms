@@ -1,0 +1,10 @@
+# YubiHSM 2 USB device — let the `yubihsm-connector` system user talk to it
+# without requiring root. Install as /etc/udev/rules.d/99-yubihsm.rules and
+# reload udev rules afterwards.
+ACTION!="add|change", GOTO="yubihsm_end"
+SUBSYSTEM!="usb", GOTO="yubihsm_end"
+
+# Vendor/product id for the YubiHSM 2.
+ATTRS{idVendor}=="1050", ATTRS{idProduct}=="0030", MODE="0660", GROUP="plugdev"
+
+LABEL="yubihsm_end"

@@ -1,0 +1,50 @@
+[Unit]
+Description=YubiHSM connector
+Documentation=https://developers.yubico.com/YubiHSM2/Component_Reference/yubihsm-connector/
+After=dev-bus-usb.device
+Wants=dev-bus-usb.device
+
+[Service]
+Type=simple
+# Install Yubico's connector binary (package `yubihsm-connector`) and
+# point it at a minimal config:
+#   listen = "127.0.0.1:12345"
+#   log    = "-"
+ExecStart=/usr/bin/yubihsm-connector -c /etc/yubihsm-connector.yaml
+
+User=yubihsm-connector
+Group=yubihsm-connector
+
+Restart=on-failure
+RestartSec=2s
+
+# --- Process hardening -----------------------------------------------
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# --- Device access ---------------------------------------------------
+# The connector needs read/write access to the USB HSM device node.
+# `SupplementaryGroups=plugdev` plus a udev rule (see deploy/README.md)
+# is the conventional way to grant this.
+SupplementaryGroups=plugdev
+DeviceAllow=/dev/bus/usb rw
+
+[Install]
+WantedBy=multi-user.target

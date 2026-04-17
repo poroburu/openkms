@@ -1,0 +1,89 @@
+[Unit]
+Description=openKMS YubiHSM2-backed transaction signer
+Documentation=https://github.com/poroburu/openkms
+After=network-online.target yubihsm-connector.service
+Wants=network-online.target
+Requires=yubihsm-connector.service
+
+[Service]
+Type=simple
+
+# Dedicated unprivileged user. Create with:
+#   useradd --system --home-dir /var/lib/openkms --shell /usr/sbin/nologin openkms
+User=openkms
+Group=openkms
+
+# Binary location. Override with systemctl edit if installed elsewhere.
+Environment=OPENKMS_CONFIG=/etc/openkms/config.toml
+Environment=RUST_LOG=info
+ExecStart=/usr/local/bin/openkms --config /etc/openkms/config.toml run
+
+# Restart semantics: keep the signer up, but give systemd room to stop
+# flapping services. MemoryLow + TasksMax keep a misbehaving build from
+# starving the rest of the homelab.
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=10s
+
+# --- Filesystem hardening ---------------------------------------------
+#
+# `/etc/openkms` holds the config + signer/admin tokens + HSM password
+# file; all are 0600 and must stay readable. `/var/lib/openkms` is the
+# persistent state dir (audit log, key-flags.json). Everything else
+# should be read-only.
+ReadOnlyPaths=/etc/openkms
+ReadWritePaths=/var/lib/openkms
+StateDirectory=openkms
+StateDirectoryMode=0700
+LogsDirectory=openkms
+LogsDirectoryMode=0700
+ConfigurationDirectory=openkms
+ConfigurationDirectoryMode=0750
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+
+# --- Process hardening ------------------------------------------------
+NoNewPrivileges=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources @mount @debug @cpu-emulation @obsolete @raw-io @reboot @swap
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateUsers=true
+
+# --- Network ----------------------------------------------------------
+#
+# openKMS only talks to the yubihsm-connector on localhost and listens on
+# an address chosen in config. Restrict address families to keep the
+# attack surface small.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+IPAddressAllow=10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+IPAddressAllow=fe80::/10
+IPAddressAllow=fc00::/7
+
+# --- Resource limits --------------------------------------------------
+LimitNOFILE=4096
+TasksMax=128
+
+# --- Service supervision --------------------------------------------------
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
