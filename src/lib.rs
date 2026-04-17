@@ -9,6 +9,7 @@ pub mod hsm;
 pub mod metrics;
 pub mod policy;
 pub mod replay;
+pub mod server;
 pub mod sig;
 
 pub use config::{Config, KeyDef};
