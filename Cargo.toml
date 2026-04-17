@@ -1,0 +1,98 @@
+[package]
+name = "openkms"
+version = "0.1.0"
+edition = "2024"
+description = "YubiHSM2-backed transaction signer for Cosmos + Solana (+ EVM later)"
+license = "Apache-2.0"
+rust-version = "1.85"
+
+[[bin]]
+name = "openkms"
+path = "src/main.rs"
+
+[dependencies]
+# HSM
+yubihsm = { version = "0.42", features = ["secp256k1", "setup", "usb", "mockhsm"] }
+
+# HTTP server
+axum = { version = "0.7", features = ["macros"] }
+tokio = { version = "1", features = ["full"] }
+tower = { version = "0.5", features = ["buffer", "limit", "load-shed", "util"] }
+tower-http = { version = "0.6", features = ["trace", "request-id"] }
+hyper = "1"
+http = "1"
+
+# Serde
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_bytes = "0.11"
+toml = "0.8"
+base64 = "0.22"
+bs58 = "0.5"
+hex = "0.4"
+bech32 = "0.11"
+
+# Crypto
+k256 = { version = "0.13", features = ["ecdsa", "sha256", "arithmetic"] }
+p256 = { version = "0.13", features = ["ecdsa"] }
+ed25519-dalek = { version = "2", features = ["hazmat"] }
+sha2 = "0.10"
+sha3 = "0.10"
+ripemd = "0.1"
+hkdf = "0.12"
+hmac = "0.12"
+rand_core = { version = "0.6", features = ["std"] }
+signature = { version = "2", features = ["std"] }
+
+# Chain SDKs
+solana-sdk = "2.3"
+solana-system-interface = { version = "1", features = ["bincode"] }
+bincode = "1.3"
+cosmrs = { version = "0.21", features = ["cosmwasm"] }
+prost = "0.13"
+prost-types = "0.13"
+
+# Derivation
+bip39 = "2.2"
+bip32 = "0.5"
+slip10_ed25519 = "0.1"
+zeroize = { version = "1", features = ["derive"] }
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+
+# Policy / concurrency
+governor = "0.6"
+dashmap = "5.5"
+lru = "0.12"
+async-trait = "0.1"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+prometheus = "0.13"
+
+# Utilities
+anyhow = "1"
+thiserror = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+time = { version = "0.3", features = ["serde", "formatting", "parsing", "macros"] }
+rpassword = "7"
+
+[dev-dependencies]
+tempfile = "3"
+reqwest = { version = "0.12", features = ["json"] }
+tokio-test = "0.4"
+
+[features]
+# Real hardware integration tests, gated behind env OPENKMS_HSM_TESTS=1
+hardware-tests = []
+# Placeholder for the future EVM chain module
+evm = []
+
+[profile.release]
+overflow-checks = true
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

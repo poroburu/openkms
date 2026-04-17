@@ -1,0 +1,25 @@
+/target
+**/*.rs.bk
+Cargo.lock.old
+.DS_Store
+
+# External reference material (cloned for design study, not part of openKMS)
+/tmkms/
+/iqkms/
+/yubihsm-bitcoin-wallet.md
+
+# Local secrets — never commit
+/etc/openkms/
+/run/
+*.mnemonic
+*.backup.bin
+audit.log
+audit.log.*
+counters.json
+killswitch.json
+
+# Tmp / caches
+*.tmp
+*.swp
+.idea/
+.vscode/
