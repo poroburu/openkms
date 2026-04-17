@@ -1,5 +1,6 @@
 //! openKMS — YubiHSM2-backed transaction signer for Cosmos + Solana (+ EVM later).
 
+pub mod audit;
 pub mod chain;
 pub mod config;
 pub mod derive;
