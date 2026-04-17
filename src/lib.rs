@@ -5,6 +5,7 @@ pub mod chain;
 pub mod config;
 pub mod derive;
 pub mod hsm;
+pub mod metrics;
 pub mod policy;
 pub mod replay;
 pub mod sig;
