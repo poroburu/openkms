@@ -4,9 +4,8 @@
 //!
 //! ```text
 //!   incoming request
-//!     -> request-id middleware
 //!     -> bearer-token auth (signer or admin realm)
-//!     -> tower::Buffer / ConcurrencyLimit (backpressure)
+//!     -> request-id extraction from `x-request-id` or mint a UUID
 //!     -> chain-specific handler (decode -> policy -> replay? -> HSM sign -> audit)
 //! ```
 //!
@@ -17,21 +16,15 @@
 //!   * The replay cache is keyed on sha256(signing_digest). See `replay.rs`
 //!     for why caching is safe.
 
-use std::{
-    collections::HashMap,
-    net::SocketAddr,
-    sync::Arc,
-    time::Instant,
-};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Instant};
 
 use anyhow::{Context, Result, anyhow};
 use axum::{
-    Router,
+    Json, Router,
     extract::{Path as AxumPath, State},
     http::{HeaderMap, StatusCode, header::AUTHORIZATION},
     response::IntoResponse,
     routing::{get, post},
-    Json,
 };
 use serde::Serialize;
 use tracing::{info, warn};
@@ -41,8 +34,7 @@ use crate::{
     admin::AdminStore,
     audit::AuditLog,
     chain::{
-        Chain, ChainError, ChainSigner, Intent, RequestContext, SignRequest,
-        cosmos::CosmosSigner,
+        Chain, ChainError, ChainSigner, Intent, RequestContext, SignRequest, cosmos::CosmosSigner,
         solana::SolanaSigner,
     },
     config::{Config, KeyDef},
@@ -151,8 +143,8 @@ pub fn router(state: AppState) -> Router {
         ));
 
     let admin_routes = Router::new()
-        .route("/admin/keys/{label}/enable", post(admin_enable))
-        .route("/admin/keys/{label}/disable", post(admin_disable))
+        .route("/admin/keys/:label/enable", post(admin_enable))
+        .route("/admin/keys/:label/disable", post(admin_disable))
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
             admin_auth_mw,
@@ -167,7 +159,7 @@ pub fn router(state: AppState) -> Router {
         .with_state(state)
 }
 
-/// Bind + serve. Uses tower::ConcurrencyLimit for basic backpressure.
+/// Bind + serve the axum router.
 pub async fn serve(state: AppState) -> Result<()> {
     let listen: SocketAddr = state
         .config
@@ -246,7 +238,10 @@ async fn list_keys(State(state): State<AppState>) -> impl IntoResponse {
 async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse {
     match state.metrics.render() {
         Ok((body, ct)) => ([(axum::http::header::CONTENT_TYPE, ct)], body).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("metrics error: {e}"))
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("metrics error: {e}"),
+        )
             .into_response(),
     }
 }
@@ -333,7 +328,9 @@ where
 
     let ctx = RequestContext {
         request_id: request_id.clone(),
-        expected_chain_id: body.payload.get("expected_chain_id")
+        expected_chain_id: body
+            .payload
+            .get("expected_chain_id")
             .and_then(|v| v.as_str())
             .map(str::to_string),
     };
@@ -376,13 +373,7 @@ where
             .signs_total()
             .with_label_values(&[chain.as_str(), &key.label, "deny"])
             .inc();
-        let rec = AuditLog::build_deny(
-            &request_id,
-            &key.label,
-            chain,
-            Some(&intent),
-            &e,
-        );
+        let rec = AuditLog::build_deny(&request_id, &key.label, chain, Some(&intent), &e);
         let _ = state.audit.append(rec).await;
         return policy_err_response(&e);
     }
@@ -417,7 +408,10 @@ where
     let body_json = match serde_json::to_value(&response) {
         Ok(v) => v,
         Err(e) => {
-            return json_err(StatusCode::INTERNAL_SERVER_ERROR, &format!("serialize: {e}"));
+            return json_err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("serialize: {e}"),
+            );
         }
     };
 
@@ -485,7 +479,11 @@ async fn admin_set(state: &AppState, label: &str, enabled: bool) -> axum::respon
     if !state.keys.contains_key(label) {
         return json_err(StatusCode::NOT_FOUND, "unknown key label");
     }
-    if let Err(e) = state.admin.set_enabled(state.policy.as_ref(), label, enabled).await {
+    if let Err(e) = state
+        .admin
+        .set_enabled(state.policy.as_ref(), label, enabled)
+        .await
+    {
         return json_err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string());
     }
     Json(AdminResponse {
@@ -602,7 +600,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(v["status"], "ok");
         assert_eq!(v["hsm_up"], true);
