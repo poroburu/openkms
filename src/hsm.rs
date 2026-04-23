@@ -244,6 +244,12 @@ mod http {
     pub use ::http::Uri;
 }
 
+// Silence unused-import warnings when optional sub-modules are not compiled.
+#[allow(unused_imports)]
+use asymmetric as _;
+#[allow(unused_imports)]
+use authentication as _;
+
 /// Shared `yubihsm` re-exports the rest of the crate reaches for when talking
 /// directly to the HSM (CLI, ceremony, backup/restore).
 pub mod hsm_types {
@@ -303,9 +309,3 @@ mod tests {
         assert_eq!(c[0], 0x03);
     }
 }
-
-// Silence unused-import warnings when optional sub-modules are not compiled.
-#[allow(unused_imports)]
-use asymmetric as _;
-#[allow(unused_imports)]
-use authentication as _;

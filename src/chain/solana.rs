@@ -330,7 +330,7 @@ mod bs58 {
     }
 
     pub struct Bs58Encoder<'a>(&'a [u8]);
-    impl<'a> Bs58Encoder<'a> {
+    impl Bs58Encoder<'_> {
         pub fn into_string(self) -> String {
             ::bs58::encode(self.0).into_string()
         }

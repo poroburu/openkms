@@ -408,7 +408,7 @@ pub fn derive_address(
     let bytes: [u8; 20] = match style {
         AddressStyle::Cosmos => {
             let sha = Sha256::digest(compressed);
-            let rip = Ripemd160::digest(&sha);
+            let rip = Ripemd160::digest(sha);
             let mut out = [0u8; 20];
             out.copy_from_slice(&rip);
             out
@@ -426,8 +426,7 @@ pub fn derive_address(
         }
     };
     let hrp = bech32::Hrp::parse(hrp).map_err(|e| anyhow::anyhow!("bad hrp: {e}"))?;
-    Ok(bech32::encode::<bech32::Bech32>(hrp, &bytes)
-        .map_err(|e| anyhow::anyhow!("bech32 encode: {e}"))?)
+    bech32::encode::<bech32::Bech32>(hrp, &bytes).map_err(|e| anyhow::anyhow!("bech32 encode: {e}"))
 }
 
 #[cfg(test)]

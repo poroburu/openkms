@@ -107,6 +107,17 @@ pub struct AuditLog {
     inner: Arc<AuditInner>,
 }
 
+struct BuildRecordArgs<'a> {
+    request_id: &'a str,
+    key_label: &'a str,
+    chain: Chain,
+    intent: &'a (dyn Intent + Send + Sync),
+    decision: Decision,
+    deny_reason: &'a str,
+    deny_detail: &'a str,
+    signature: Option<&'a [u8]>,
+}
+
 struct AuditInner {
     path: PathBuf,
     writer: Mutex<BufWriter<File>>,
@@ -166,16 +177,16 @@ impl AuditLog {
         intent: &(dyn Intent + Send + Sync),
         signature_bytes: &[u8],
     ) -> AuditRecord {
-        build_record(
+        build_record(BuildRecordArgs {
             request_id,
             key_label,
             chain,
             intent,
-            Decision::Allow,
-            "",
-            "",
-            Some(signature_bytes),
-        )
+            decision: Decision::Allow,
+            deny_reason: "",
+            deny_detail: "",
+            signature: Some(signature_bytes),
+        })
     }
 
     /// Build a deny record for a decoded intent + the PolicyError that
@@ -190,16 +201,16 @@ impl AuditLog {
     ) -> AuditRecord {
         let detail = err.to_string();
         match intent {
-            Some(i) => build_record(
+            Some(i) => build_record(BuildRecordArgs {
                 request_id,
                 key_label,
                 chain,
-                i,
-                Decision::Deny,
-                err.reason_code(),
-                &detail,
-                None,
-            ),
+                intent: i,
+                decision: Decision::Deny,
+                deny_reason: err.reason_code(),
+                deny_detail: &detail,
+                signature: None,
+            }),
             None => AuditRecord {
                 timestamp: now_rfc3339(),
                 request_id: request_id.to_string(),
@@ -252,16 +263,17 @@ impl AuditLog {
     }
 }
 
-fn build_record(
-    request_id: &str,
-    key_label: &str,
-    chain: Chain,
-    intent: &(dyn Intent + Send + Sync),
-    decision: Decision,
-    deny_reason: &str,
-    deny_detail: &str,
-    signature: Option<&[u8]>,
-) -> AuditRecord {
+fn build_record(args: BuildRecordArgs<'_>) -> AuditRecord {
+    let BuildRecordArgs {
+        request_id,
+        key_label,
+        chain,
+        intent,
+        decision,
+        deny_reason,
+        deny_detail,
+        signature,
+    } = args;
     let digest_hex = hex::encode(Sha256::digest(intent.signing_digest()));
     let sig_hex = signature
         .map(|s| hex::encode(Sha256::digest(s)))
