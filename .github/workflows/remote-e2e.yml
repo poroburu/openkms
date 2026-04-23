@@ -1,0 +1,35 @@
+name: Remote E2E
+
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    env:
+      OPENKMS_BASE_URL: ${{ secrets.OPENKMS_BASE_URL }}
+      OPENKMS_SIGNER_TOKEN: ${{ secrets.OPENKMS_SIGNER_TOKEN }}
+      OPENKMS_REMOTE_E2E_REQUEST_B64: ${{ secrets.OPENKMS_REMOTE_E2E_REQUEST_B64 }}
+      OPENKMS_SIGN_PATH: ${{ vars.OPENKMS_SIGN_PATH }}
+      OPENKMS_EXPECT_KEY_LABEL: ${{ vars.OPENKMS_EXPECT_KEY_LABEL }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate workflow configuration
+        run: |
+          test -n "${OPENKMS_BASE_URL}" || { echo "missing secret OPENKMS_BASE_URL"; exit 1; }
+          test -n "${OPENKMS_SIGNER_TOKEN}" || { echo "missing secret OPENKMS_SIGNER_TOKEN"; exit 1; }
+          test -n "${OPENKMS_REMOTE_E2E_REQUEST_B64}" || { echo "missing secret OPENKMS_REMOTE_E2E_REQUEST_B64"; exit 1; }
+
+      - name: Materialize request fixture
+        run: |
+          printf '%s' "${OPENKMS_REMOTE_E2E_REQUEST_B64}" | base64 --decode > request.json
+
+      - name: Run remote smoke test
+        env:
+          OPENKMS_SIGN_REQUEST_FILE: request.json
+        run: |
+          chmod +x ./scripts/remote_e2e_smoke.sh
+          ./scripts/remote_e2e_smoke.sh
