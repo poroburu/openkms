@@ -10,6 +10,7 @@
 
 use std::{net::SocketAddr, path::PathBuf, str::FromStr};
 
+use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use openkms::{
     chain::Chain,
     config::{
@@ -34,6 +35,29 @@ impl Drop for ServerHandle {
     fn drop(&mut self) {
         self.join.abort();
     }
+}
+
+pub fn broadcast_enabled() -> bool {
+    matches!(std::env::var("OPENKMS_BROADCAST_TESTS").as_deref(), Ok("1"))
+}
+
+pub fn require_env(name: &str) -> String {
+    std::env::var(name).unwrap_or_else(|_| panic!("missing required env: {name}"))
+}
+
+pub fn env_u64(name: &str, default: u64) -> u64 {
+    std::env::var(name)
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(default)
+}
+
+pub fn decode_b64_32(name: &str) -> [u8; 32] {
+    let raw = B64
+        .decode(require_env(name))
+        .unwrap_or_else(|e| panic!("invalid base64 in {name}: {e}"));
+    raw.try_into()
+        .unwrap_or_else(|_| panic!("{name} must decode to exactly 32 bytes"))
 }
 
 /// Create a fresh, unique temp directory under `$TMPDIR`. Cleaned up

@@ -495,12 +495,17 @@ The ignored hardware test is intentionally strict once enabled: if
 `OPENKMS_HARDWARE_TESTS=1`, an unreachable connector fails the run instead of
 silently skipping. That keeps "green" hardware reports honest.
 
-For clean-machine validation, see the checked-in GitHub Actions workflow in
+For clean-machine repository checks, see the checked-in GitHub Actions workflow
+in
 `.github/workflows/ci.yml`.
 
 For staging smoke tests against a real remote deployment, see
 [`docs/remote-e2e.md`](docs/remote-e2e.md) and
 `.github/workflows/remote-e2e.yml`.
+
+For live testnet broadcasts through a local signer booted in GitHub Actions,
+see [`docs/broadcast-e2e.md`](docs/broadcast-e2e.md) and
+`.github/workflows/broadcast-e2e.yml`.
 
 ## Architecture
 

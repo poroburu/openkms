@@ -1,0 +1,68 @@
+name: Broadcast E2E
+
+on:
+  workflow_dispatch:
+
+jobs:
+  solana:
+    name: Solana broadcast
+    runs-on: ubuntu-latest
+    env:
+      OPENKMS_BROADCAST_TESTS: "1"
+      OPENKMS_SOLANA_RPC_URL: ${{ secrets.OPENKMS_SOLANA_RPC_URL }}
+      OPENKMS_SOLANA_SIGNER_SEED_B64: ${{ secrets.OPENKMS_SOLANA_SIGNER_SEED_B64 }}
+      OPENKMS_SOLANA_TRANSFER_LAMPORTS: ${{ vars.OPENKMS_SOLANA_TRANSFER_LAMPORTS }}
+      OPENKMS_SOLANA_CONFIRM_TIMEOUT_SECS: ${{ vars.OPENKMS_SOLANA_CONFIRM_TIMEOUT_SECS }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.85.0
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Validate workflow configuration
+        run: |
+          test -n "${OPENKMS_SOLANA_RPC_URL}" || { echo "missing secret OPENKMS_SOLANA_RPC_URL"; exit 1; }
+          test -n "${OPENKMS_SOLANA_SIGNER_SEED_B64}" || { echo "missing secret OPENKMS_SOLANA_SIGNER_SEED_B64"; exit 1; }
+
+      - name: Run Solana broadcast test
+        run: cargo test --test broadcast_solana_e2e -- --ignored --nocapture
+
+  cosmos:
+    name: Cosmos broadcast
+    runs-on: ubuntu-latest
+    env:
+      OPENKMS_BROADCAST_TESTS: "1"
+      OPENKMS_COSMOS_REST_URL: ${{ secrets.OPENKMS_COSMOS_REST_URL }}
+      OPENKMS_COSMOS_SIGNER_SCALAR_B64: ${{ secrets.OPENKMS_COSMOS_SIGNER_SCALAR_B64 }}
+      OPENKMS_COSMOS_CHAIN_ID: ${{ vars.OPENKMS_COSMOS_CHAIN_ID }}
+      OPENKMS_COSMOS_HRP: ${{ vars.OPENKMS_COSMOS_HRP }}
+      OPENKMS_COSMOS_FEE_DENOM: ${{ vars.OPENKMS_COSMOS_FEE_DENOM }}
+      OPENKMS_COSMOS_FEE_AMOUNT: ${{ vars.OPENKMS_COSMOS_FEE_AMOUNT }}
+      OPENKMS_COSMOS_GAS_LIMIT: ${{ vars.OPENKMS_COSMOS_GAS_LIMIT }}
+      OPENKMS_COSMOS_TRANSFER_AMOUNT: ${{ vars.OPENKMS_COSMOS_TRANSFER_AMOUNT }}
+      OPENKMS_COSMOS_CONFIRM_TIMEOUT_SECS: ${{ vars.OPENKMS_COSMOS_CONFIRM_TIMEOUT_SECS }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.85.0
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Validate workflow configuration
+        run: |
+          test -n "${OPENKMS_COSMOS_REST_URL}" || { echo "missing secret OPENKMS_COSMOS_REST_URL"; exit 1; }
+          test -n "${OPENKMS_COSMOS_SIGNER_SCALAR_B64}" || { echo "missing secret OPENKMS_COSMOS_SIGNER_SCALAR_B64"; exit 1; }
+          test -n "${OPENKMS_COSMOS_FEE_DENOM}" || { echo "missing variable OPENKMS_COSMOS_FEE_DENOM"; exit 1; }
+          test -n "${OPENKMS_COSMOS_FEE_AMOUNT}" || { echo "missing variable OPENKMS_COSMOS_FEE_AMOUNT"; exit 1; }
+
+      - name: Run Cosmos broadcast test
+        run: cargo test --test broadcast_cosmos_e2e -- --ignored --nocapture

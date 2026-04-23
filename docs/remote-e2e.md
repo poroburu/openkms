@@ -1,10 +1,12 @@
 # Remote E2E Smoke Tests
 
-This repo now carries two separate automation lanes:
+This repo now carries three separate automation lanes:
 
-- `.github/workflows/ci.yml` for clean-machine validation against `mockhsm`
+- `.github/workflows/ci.yml` for clean-machine repository checks against `mockhsm`
 - `.github/workflows/remote-e2e.yml` for staging smoke tests against a real
   deployed `openkms` instance
+- `.github/workflows/broadcast-e2e.yml` for live testnet broadcasts through a
+  local `openkms` server started in GitHub Actions
 
 The remote lane is intentionally a smoke test, not a load test. Its job is to
 prove that a real deployment can answer `/health`, `/keys`, `/metrics`, and a
@@ -20,7 +22,12 @@ policy behavior, but it does not prove:
 - the staging URL, bearer tokens, and network path work outside one machine
 
 Treat the remote smoke lane as a release/staging gate, not as a replacement for
-the fast CI job.
+the fast repo-check lane.
+
+If you want to validate full chain submission, use
+[`broadcast-e2e.md`](broadcast-e2e.md) and
+`.github/workflows/broadcast-e2e.yml`. Keep that separate from this workflow so
+signer deployment failures stay distinct from testnet RPC or fee/nonce issues.
 
 ## Workflow inputs
 
