@@ -28,7 +28,12 @@ use zeroize::Zeroizing;
 #[command(name = "openkms", version, about)]
 struct Cli {
     /// Path to the openkms config file.
-    #[arg(long, short = 'c', env = "OPENKMS_CONFIG", default_value = "/etc/openkms/config.toml")]
+    #[arg(
+        long,
+        short = 'c',
+        env = "OPENKMS_CONFIG",
+        default_value = "/etc/openkms/config.toml"
+    )]
     config: PathBuf,
 
     /// HSM connector URL (overrides the value in the config file).
@@ -181,8 +186,19 @@ impl From<ChainArg> for Chain {
 async fn main() -> Result<()> {
     init_tracing();
     let cli = Cli::parse();
-    let Cli { config, connector, auth_key_id, mock, cmd } = cli;
-    let ctx = CliCtx { config, connector, auth_key_id, mock };
+    let Cli {
+        config,
+        connector,
+        auth_key_id,
+        mock,
+        cmd,
+    } = cli;
+    let ctx = CliCtx {
+        config,
+        connector,
+        auth_key_id,
+        mock,
+    };
     match cmd {
         Command::Detect => detect(&ctx).await,
         Command::NewMnemonic => new_mnemonic(&ctx).await,
@@ -267,7 +283,9 @@ async fn setup(cli: &CliCtx, args: SetupArgs) -> Result<()> {
     let guard = client.lock().await;
 
     info!("resetting HSM to factory defaults");
-    guard.reset_device().map_err(|e| anyhow!("reset_device: {e}"))?;
+    guard
+        .reset_device()
+        .map_err(|e| anyhow!("reset_device: {e}"))?;
     drop(guard);
     // After a reset the session is invalid. Re-login as the factory default
     // auth key (id 1 / password "password") — this is the only key left.
@@ -310,9 +328,7 @@ async fn setup(cli: &CliCtx, args: SetupArgs) -> Result<()> {
         &guard,
         ids::SIGNER_AUTH_KEY_ID,
         "openkms-signer",
-        H::Capability::SIGN_ECDSA
-            | H::Capability::SIGN_EDDSA
-            | H::Capability::GET_PSEUDO_RANDOM,
+        H::Capability::SIGN_ECDSA | H::Capability::SIGN_EDDSA | H::Capability::GET_PSEUDO_RANDOM,
         H::Capability::empty(),
         H::Domain::DOM1,
         &secrets.signer_password,
@@ -340,9 +356,18 @@ async fn setup(cli: &CliCtx, args: SetupArgs) -> Result<()> {
         .map_err(|e| anyhow!("delete factory auth key: {e}"))?;
 
     println!("openKMS setup complete:");
-    println!("  ceremony_auth_key_id    = 0x{:04x}", ids::CEREMONY_AUTH_KEY_ID);
-    println!("  provisioner_auth_key_id = 0x{:04x}", ids::PROVISIONER_AUTH_KEY_ID);
-    println!("  signer_auth_key_id      = 0x{:04x}", ids::SIGNER_AUTH_KEY_ID);
+    println!(
+        "  ceremony_auth_key_id    = 0x{:04x}",
+        ids::CEREMONY_AUTH_KEY_ID
+    );
+    println!(
+        "  provisioner_auth_key_id = 0x{:04x}",
+        ids::PROVISIONER_AUTH_KEY_ID
+    );
+    println!(
+        "  signer_auth_key_id      = 0x{:04x}",
+        ids::SIGNER_AUTH_KEY_ID
+    );
     println!("  wrap_key_id             = 0x{:04x}", ids::WRAP_KEY_ID);
     Ok(())
 }
@@ -389,11 +414,29 @@ async fn keys_dispatch(cli: &CliCtx, cmd: KeysCommand) -> Result<()> {
     match cmd {
         KeysCommand::List => keys_list(cli).await,
         KeysCommand::Address { label } => keys_address(cli, &label).await,
-        KeysCommand::Generate { label, chain, object_id } => {
-            keys_generate(cli, &label, chain.into(), object_id).await
-        }
-        KeysCommand::Provision { label, chain, object_id, path, mnemonic_file, passphrase_file } => {
-            keys_provision(cli, &label, chain.into(), object_id, &path, &mnemonic_file, passphrase_file.as_deref()).await
+        KeysCommand::Generate {
+            label,
+            chain,
+            object_id,
+        } => keys_generate(cli, &label, chain.into(), object_id).await,
+        KeysCommand::Provision {
+            label,
+            chain,
+            object_id,
+            path,
+            mnemonic_file,
+            passphrase_file,
+        } => {
+            keys_provision(
+                cli,
+                &label,
+                chain.into(),
+                object_id,
+                &path,
+                &mnemonic_file,
+                passphrase_file.as_deref(),
+            )
+            .await
         }
         KeysCommand::Export { object_id, out } => keys_export(cli, object_id, &out).await,
         KeysCommand::Import { in_ } => keys_import(cli, &in_).await,
@@ -428,9 +471,12 @@ async fn keys_address(cli: &CliCtx, label: &str) -> Result<()> {
             println!("{}", s.address);
         }
         Chain::Cosmos => {
-            let s =
-                CosmosSigner::from_hsm(&hsm, key, cfg.cosmos.accepted_pubkey_type_urls.iter().cloned())
-                    .await?;
+            let s = CosmosSigner::from_hsm(
+                &hsm,
+                key,
+                cfg.cosmos.accepted_pubkey_type_urls.iter().cloned(),
+            )
+            .await?;
             println!("{}", s.default_address);
         }
         Chain::Unknown => bail!("unknown chain for key {label:?}"),
@@ -616,7 +662,11 @@ async fn run_service(cli: &CliCtx) -> Result<()> {
     let hsm = if cli.mock {
         Hsm::open_mock(cfg.hsm.auth_key_id, password.as_bytes())?
     } else {
-        Hsm::open_http(&cfg.hsm.connector_url, cfg.hsm.auth_key_id, password.as_bytes())?
+        Hsm::open_http(
+            &cfg.hsm.connector_url,
+            cfg.hsm.auth_key_id,
+            password.as_bytes(),
+        )?
     };
     // Warm-up: open audit log now so we fail fast if the directory is bad.
     let _ = AuditLog::open(&cfg.audit)?;
@@ -687,4 +737,3 @@ fn secure_perms(path: &Path) -> Result<()> {
     let _ = path;
     Ok(())
 }
-

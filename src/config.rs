@@ -263,8 +263,7 @@ fn enforce_mode_0600(path: &std::path::Path) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let md = fs::metadata(path)
-            .with_context(|| format!("stat {path:?}"))?;
+        let md = fs::metadata(path).with_context(|| format!("stat {path:?}"))?;
         let mode = md.permissions().mode() & 0o777;
         if mode & 0o077 != 0 {
             return Err(anyhow!(

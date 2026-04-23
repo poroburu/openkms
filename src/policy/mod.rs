@@ -18,8 +18,8 @@ use std::{
     sync::Arc,
 };
 
-use governor::{Quota, RateLimiter, state::InMemoryState, state::direct::NotKeyed};
 use governor::clock::DefaultClock;
+use governor::{Quota, RateLimiter, state::InMemoryState, state::direct::NotKeyed};
 use tokio::sync::RwLock;
 
 use crate::{
@@ -62,18 +62,23 @@ pub enum PolicyError {
     #[error("rate limited ({0})")]
     RateLimited(&'static str),
     #[error("per-tx cap exceeded: {token} amount={amount} cap={cap}")]
-    PerTxCapExceeded { token: String, amount: u128, cap: u128 },
+    PerTxCapExceeded {
+        token: String,
+        amount: u128,
+        cap: u128,
+    },
     #[error("daily cap exceeded: {token} today={spent} cap={cap}")]
-    DailyCapExceeded { token: String, spent: u128, cap: u128 },
+    DailyCapExceeded {
+        token: String,
+        spent: u128,
+        cap: u128,
+    },
     #[error("program not allowed: {0}")]
     ProgramNotAllowed(String),
     #[error("message type not allowed: {0}")]
     MessageNotAllowed(String),
     #[error("recipient not allowed: program={program} recipient={recipient}")]
-    RecipientNotAllowed {
-        program: String,
-        recipient: String,
-    },
+    RecipientNotAllowed { program: String, recipient: String },
     #[error("no policy rules configured — fail-closed")]
     NoRules,
     #[error("internal policy error: {0}")]
@@ -255,7 +260,10 @@ impl PolicyEngine for DefaultPolicyEngine {
                 }
             }
             let native_label = "native".to_string();
-            let entry = rt.daily_spend.entry(native_label.clone()).or_insert((today, 0));
+            let entry = rt
+                .daily_spend
+                .entry(native_label.clone())
+                .or_insert((today, 0));
             let projected = entry.1.saturating_add(native_sum);
             if projected > cap {
                 return Err(PolicyError::DailyCapExceeded {
@@ -309,10 +317,18 @@ fn build_states(
         let per_tx_cap = parse_u128(k.policy.per_tx_cap_lamports.as_deref());
         let daily_cap = parse_u128(k.policy.daily_cap_lamports.as_deref());
 
-        let allowed_programs: HashSet<String> =
-            k.policy.allowed_programs.iter().map(|p| p.id.clone()).collect();
-        let allowed_messages: HashSet<String> =
-            k.policy.allowed_messages.iter().map(|m| m.type_url.clone()).collect();
+        let allowed_programs: HashSet<String> = k
+            .policy
+            .allowed_programs
+            .iter()
+            .map(|p| p.id.clone())
+            .collect();
+        let allowed_messages: HashSet<String> = k
+            .policy
+            .allowed_messages
+            .iter()
+            .map(|m| m.type_url.clone())
+            .collect();
         let allowed_recipients: HashSet<String> = k
             .policy
             .allowed_recipients
@@ -330,13 +346,19 @@ fn build_states(
             .max_signs_per_hour
             .and_then(NonZeroU32::new)
             .map(|nz| RateLimiter::direct(Quota::per_hour(nz)));
-        let lim_day = k.policy.max_signs_per_day.and_then(NonZeroU32::new).map(|nz| {
-            // governor doesn't ship a `per_day` helper; 1-day = 24h.
-            let quota = Quota::with_period(std::time::Duration::from_secs(86_400 / u64::from(nz.get())))
+        let lim_day = k
+            .policy
+            .max_signs_per_day
+            .and_then(NonZeroU32::new)
+            .map(|nz| {
+                // governor doesn't ship a `per_day` helper; 1-day = 24h.
+                let quota = Quota::with_period(std::time::Duration::from_secs(
+                    86_400 / u64::from(nz.get()),
+                ))
                 .expect("non-zero period")
                 .allow_burst(nz);
-            RateLimiter::direct(quota)
-        });
+                RateLimiter::direct(quota)
+            });
 
         let runtime = preserved
             .get(&k.label)
@@ -369,7 +391,12 @@ fn parse_u128(s: Option<&str>) -> Option<u128> {
 }
 
 fn unix_day_utc() -> i64 {
-    chrono::Utc::now().date_naive().and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp()
+    chrono::Utc::now()
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .unwrap()
+        .and_utc()
+        .timestamp()
 }
 
 #[cfg(test)]

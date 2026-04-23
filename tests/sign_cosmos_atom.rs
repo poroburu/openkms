@@ -15,9 +15,7 @@ use cosmrs::proto::cosmos::{
 use k256::ecdsa::{
     Signature as K256Sig, SigningKey, VerifyingKey, signature::hazmat::PrehashVerifier,
 };
-use openkms::{
-    chain::cosmos::derive_address, config::AddressStyle, hsm::Hsm,
-};
+use openkms::{chain::cosmos::derive_address, config::AddressStyle, hsm::Hsm};
 use prost::Message;
 use sha2::{Digest, Sha256};
 
@@ -162,9 +160,13 @@ async fn signs_provider_chain_msg_send_end_to_end() {
     common::provision_secp256k1(&hsm, SIGNER_OBJECT_ID, "atom-test", &SIGNER_SCALAR).await;
 
     let (signer_comp, signer_uncomp) = secp_pubkeys(&SIGNER_SCALAR);
-    let signer_addr =
-        derive_address(&signer_comp, &signer_uncomp, AddressStyle::Cosmos, COSMOS_HRP)
-            .expect("derive signer address");
+    let signer_addr = derive_address(
+        &signer_comp,
+        &signer_uncomp,
+        AddressStyle::Cosmos,
+        COSMOS_HRP,
+    )
+    .expect("derive signer address");
     let (recipient_comp, recipient_uncomp) = secp_pubkeys(&RECIPIENT_SCALAR);
     let recipient_addr = derive_address(
         &recipient_comp,
@@ -235,8 +237,13 @@ async fn chain_id_mismatch_returns_400() {
     common::provision_secp256k1(&hsm, SIGNER_OBJECT_ID, "atom-test", &SIGNER_SCALAR).await;
 
     let (signer_comp, signer_uncomp) = secp_pubkeys(&SIGNER_SCALAR);
-    let signer_addr =
-        derive_address(&signer_comp, &signer_uncomp, AddressStyle::Cosmos, COSMOS_HRP).unwrap();
+    let signer_addr = derive_address(
+        &signer_comp,
+        &signer_uncomp,
+        AddressStyle::Cosmos,
+        COSMOS_HRP,
+    )
+    .unwrap();
     let (recipient_comp, recipient_uncomp) = secp_pubkeys(&RECIPIENT_SCALAR);
     let recipient_addr = derive_address(
         &recipient_comp,
@@ -284,8 +291,13 @@ async fn wrong_pubkey_in_authinfo_returns_400() {
     common::provision_secp256k1(&hsm, SIGNER_OBJECT_ID, "atom-test", &SIGNER_SCALAR).await;
 
     let (signer_comp, signer_uncomp) = secp_pubkeys(&SIGNER_SCALAR);
-    let signer_addr =
-        derive_address(&signer_comp, &signer_uncomp, AddressStyle::Cosmos, COSMOS_HRP).unwrap();
+    let signer_addr = derive_address(
+        &signer_comp,
+        &signer_uncomp,
+        AddressStyle::Cosmos,
+        COSMOS_HRP,
+    )
+    .unwrap();
     let (other_comp, _) = secp_pubkeys(&[0x9au8; 32]);
     let (recipient_comp, recipient_uncomp) = secp_pubkeys(&RECIPIENT_SCALAR);
     let recipient_addr = derive_address(
@@ -335,8 +347,13 @@ async fn replay_returns_cached_signature() {
     common::provision_secp256k1(&hsm, SIGNER_OBJECT_ID, "atom-test", &SIGNER_SCALAR).await;
 
     let (signer_comp, signer_uncomp) = secp_pubkeys(&SIGNER_SCALAR);
-    let signer_addr =
-        derive_address(&signer_comp, &signer_uncomp, AddressStyle::Cosmos, COSMOS_HRP).unwrap();
+    let signer_addr = derive_address(
+        &signer_comp,
+        &signer_uncomp,
+        AddressStyle::Cosmos,
+        COSMOS_HRP,
+    )
+    .unwrap();
     let (recipient_comp, recipient_uncomp) = secp_pubkeys(&RECIPIENT_SCALAR);
     let recipient_addr = derive_address(
         &recipient_comp,

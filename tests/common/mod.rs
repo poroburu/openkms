@@ -13,8 +13,8 @@ use std::{net::SocketAddr, path::PathBuf, str::FromStr};
 use openkms::{
     chain::Chain,
     config::{
-        AddressStyle, AllowedMessage, AllowedProgram, AuditConfig, Config, CosmosConfig,
-        HsmConfig, KeyDef, KeyPolicy, ServerConfig,
+        AddressStyle, AllowedMessage, AllowedProgram, AuditConfig, Config, CosmosConfig, HsmConfig,
+        KeyDef, KeyPolicy, ServerConfig,
     },
     hsm::{Hsm, hsm_types as H},
     server::{AppState, router},

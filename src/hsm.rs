@@ -56,11 +56,7 @@ impl Hsm {
     /// `reconnect=true` is pinned by design (TMKMS pattern): transient USB
     /// disconnects self-heal on the next request rather than requiring the
     /// service to be restarted.
-    pub fn open_http(
-        connector_url: &str,
-        auth_key_id: u16,
-        password: &[u8],
-    ) -> Result<Self> {
+    pub fn open_http(connector_url: &str, auth_key_id: u16, password: &[u8]) -> Result<Self> {
         let config = parse_http_config(connector_url)?;
         let connector = Connector::http(&config);
         Self::open(connector, auth_key_id, password)
@@ -188,7 +184,7 @@ impl Hsm {
         digest: &[u8; 32],
     ) -> Result<Vec<u8>> {
         let _ = curve; // curve is determined by the object on the HSM; kept in
-                       // the signature so callers record which curve they expect.
+        // the signature so callers record which curve they expect.
         let guard = self.inner.lock().await;
         let der = guard
             .sign_ecdsa_prehash_raw(key_id, digest.as_slice())
@@ -232,7 +228,11 @@ pub fn compress_secp256k1(uncompressed: &[u8; 65]) -> Result<[u8; 33]> {
         return Err(anyhow!("expected uncompressed SEC1 tag 0x04"));
     }
     let mut out = [0u8; 33];
-    out[0] = if uncompressed[64] & 1 == 0 { 0x02 } else { 0x03 };
+    out[0] = if uncompressed[64] & 1 == 0 {
+        0x02
+    } else {
+        0x03
+    };
     out[1..].copy_from_slice(&uncompressed[1..33]);
     Ok(out)
 }

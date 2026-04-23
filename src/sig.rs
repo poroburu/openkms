@@ -79,8 +79,8 @@ mod tests {
         let der_sig: K256Sig = sk.sign(msg);
         let der = der_sig.to_der();
 
-        let compact = secp256k1_der_to_compact_low_s(der.as_bytes())
-            .expect("DER parse should succeed");
+        let compact =
+            secp256k1_der_to_compact_low_s(der.as_bytes()).expect("DER parse should succeed");
 
         // Low-s: s must be <= n/2.
         let sig_rebuilt = compact_to_k256(&compact).expect("rebuild");

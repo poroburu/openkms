@@ -14,7 +14,10 @@ use serde::{Deserialize, Serialize};
 use solana_sdk::{message::VersionedMessage, pubkey::Pubkey};
 
 use crate::{
-    chain::{Chain, ChainError, ChainResult, ChainSigner, Intent, ProgramRef, RequestContext, SignRequest, TokenRef, Transfer},
+    chain::{
+        Chain, ChainError, ChainResult, ChainSigner, Intent, ProgramRef, RequestContext,
+        SignRequest, TokenRef, Transfer,
+    },
     config::KeyDef,
     hsm::Hsm,
 };
@@ -93,7 +96,10 @@ impl SolanaSigner {
     pub async fn from_hsm(hsm: &Hsm, key: &KeyDef) -> anyhow::Result<Self> {
         let pk = hsm.get_ed25519_pubkey(key.object_id).await?;
         let address = bs58::encode(&pk).into_string();
-        Ok(Self { pubkey: pk, address })
+        Ok(Self {
+            pubkey: pk,
+            address,
+        })
     }
 
     /// Test constructor: build a signer from a known pubkey (bypasses the
@@ -157,7 +163,8 @@ impl ChainSigner for SolanaSigner {
         let alt_resolved = resolve_alt_addresses(&msg, &parsed.address_lookup_tables)?;
 
         // Extract programs + transfers.
-        let (programs, message_types, transfers) = extract_intent_payload(&msg, static_keys, &alt_resolved)?;
+        let (programs, message_types, transfers) =
+            extract_intent_payload(&msg, static_keys, &alt_resolved)?;
 
         let human_summary = format!(
             "solana message: {} instructions, {} outgoing transfer(s), req_id={}",
@@ -209,22 +216,18 @@ impl ChainSigner for SolanaSigner {
     }
 }
 
-fn resolve_alt_addresses(
-    msg: &VersionedMessage,
-    tables: &[AltEntry],
-) -> ChainResult<Vec<Pubkey>> {
+fn resolve_alt_addresses(msg: &VersionedMessage, tables: &[AltEntry]) -> ChainResult<Vec<Pubkey>> {
     let Some(lookups) = msg.address_table_lookups() else {
         return Ok(Vec::new());
     };
     let mut resolved = Vec::new();
     for lookup in lookups {
-        let entry = find_alt(tables, &lookup.account_key)
-            .ok_or_else(|| {
-                ChainError::Validation(format!(
-                    "message references ALT {} but request did not include its entries",
-                    lookup.account_key
-                ))
-            })?;
+        let entry = find_alt(tables, &lookup.account_key).ok_or_else(|| {
+            ChainError::Validation(format!(
+                "message references ALT {} but request did not include its entries",
+                lookup.account_key
+            ))
+        })?;
         resolve_indexes(&mut resolved, entry, &lookup.writable_indexes)?;
         resolve_indexes(&mut resolved, entry, &lookup.readonly_indexes)?;
     }
@@ -246,9 +249,9 @@ fn resolve_indexes(out: &mut Vec<Pubkey>, entry: &AltEntry, indexes: &[u8]) -> C
                 entry.addresses.len()
             ))
         })?;
-        let pk: Pubkey = addr
-            .parse()
-            .map_err(|e| ChainError::Validation(format!("ALT address {addr:?} parse failed: {e}")))?;
+        let pk: Pubkey = addr.parse().map_err(|e| {
+            ChainError::Validation(format!("ALT address {addr:?} parse failed: {e}"))
+        })?;
         out.push(pk);
     }
     Ok(())
@@ -295,11 +298,7 @@ fn extract_intent_payload(
 /// Parse a `SystemInstruction::Transfer { lamports }` payload. Returns None
 /// for all other SystemInstruction variants, which are surfaced only as a
 /// program invocation (not a transfer).
-fn parse_system_transfer(
-    data: &[u8],
-    static_keys: &[Pubkey],
-    accounts: &[u8],
-) -> Option<Transfer> {
+fn parse_system_transfer(data: &[u8], static_keys: &[Pubkey], accounts: &[u8]) -> Option<Transfer> {
     if data.len() < 4 {
         return None;
     }

@@ -71,9 +71,7 @@ impl ReplayCache {
     pub fn get(&self, key: &DigestHash) -> Option<CachedResponse> {
         let mut guard = self.inner.lock().expect("replay cache poisoned");
         match guard.get(key) {
-            Some(entry) if entry.inserted_at.elapsed() <= self.ttl => {
-                Some(entry.response.clone())
-            }
+            Some(entry) if entry.inserted_at.elapsed() <= self.ttl => Some(entry.response.clone()),
             Some(_) => {
                 // Stale — remove so we don't keep ageing it.
                 guard.pop(key);

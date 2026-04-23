@@ -231,8 +231,8 @@ impl AuditLog {
                 let tmp = rec.clone();
                 serde_json::to_vec(&AuditRecordNoHmac::from(&tmp))?
             };
-            let mut mac = HmacSha256::new_from_slice(key)
-                .map_err(|e| anyhow::anyhow!("hmac new: {e}"))?;
+            let mut mac =
+                HmacSha256::new_from_slice(key).map_err(|e| anyhow::anyhow!("hmac new: {e}"))?;
             mac.update(prev.as_bytes());
             mac.update(&serialized_no_hmac);
             let tag = mac.finalize().into_bytes();
@@ -407,11 +407,23 @@ mod tests {
         let intent = MockIntent;
 
         let r1 = log
-            .append(AuditLog::build_allow("r1", "k1", Chain::Cosmos, &intent, b"s1"))
+            .append(AuditLog::build_allow(
+                "r1",
+                "k1",
+                Chain::Cosmos,
+                &intent,
+                b"s1",
+            ))
             .await
             .unwrap();
         let r2 = log
-            .append(AuditLog::build_allow("r2", "k1", Chain::Cosmos, &intent, b"s2"))
+            .append(AuditLog::build_allow(
+                "r2",
+                "k1",
+                Chain::Cosmos,
+                &intent,
+                b"s2",
+            ))
             .await
             .unwrap();
 

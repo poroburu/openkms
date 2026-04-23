@@ -44,10 +44,8 @@ impl AdminStore {
             .with_context(|| format!("create state_dir {state_dir:?}"))?;
         let path = state_dir.join("key-flags.json");
         let flags = if path.exists() {
-            let raw = std::fs::read_to_string(&path)
-                .with_context(|| format!("read {path:?}"))?;
-            serde_json::from_str::<KeyFlags>(&raw)
-                .with_context(|| format!("parse {path:?}"))?
+            let raw = std::fs::read_to_string(&path).with_context(|| format!("read {path:?}"))?;
+            serde_json::from_str::<KeyFlags>(&raw).with_context(|| format!("parse {path:?}"))?
         } else {
             KeyFlags::default()
         };
@@ -93,9 +91,11 @@ impl AdminStore {
         let raw = serde_json::to_vec_pretty(flags)?;
         // Atomic-ish replace via tmp + rename.
         let tmp = self.inner.path.with_extension("tmp");
-        tokio::fs::write(&tmp, &raw).await
+        tokio::fs::write(&tmp, &raw)
+            .await
             .with_context(|| format!("write tmp {tmp:?}"))?;
-        tokio::fs::rename(&tmp, &self.inner.path).await
+        tokio::fs::rename(&tmp, &self.inner.path)
+            .await
             .with_context(|| format!("rename {tmp:?} -> {:?}", self.inner.path))?;
         #[cfg(unix)]
         {

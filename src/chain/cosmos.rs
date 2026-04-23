@@ -106,9 +106,7 @@ impl CosmosSigner {
         accepted_type_urls: impl IntoIterator<Item = String>,
     ) -> anyhow::Result<Self> {
         let compressed = hsm.get_secp256k1_pubkey_compressed(key.object_id).await?;
-        let uncompressed = hsm
-            .get_secp256k1_pubkey_uncompressed(key.object_id)
-            .await?;
+        let uncompressed = hsm.get_secp256k1_pubkey_uncompressed(key.object_id).await?;
         let hrp = key
             .default_hrp
             .clone()
@@ -254,13 +252,12 @@ impl CosmosSigner {
                     .unwrap_or(false)
             })
             .ok_or_else(|| {
-                ChainError::Validation("AuthInfo has no signer with an accepted public_key type_url".into())
+                ChainError::Validation(
+                    "AuthInfo has no signer with an accepted public_key type_url".into(),
+                )
             })?;
 
-        let any = signer
-            .public_key
-            .as_ref()
-            .expect("filtered above");
+        let any = signer.public_key.as_ref().expect("filtered above");
 
         // Every accepted pubkey type URL Cosmos has (base, Ethermint,
         // Injective) wraps a `PubKey { bytes key }` protobuf whose `key`
@@ -439,7 +436,9 @@ mod tests {
     use cosmrs::proto::cosmos::{
         bank::v1beta1::MsgSend,
         base::v1beta1::Coin,
-        tx::v1beta1::{AuthInfo as ProtoAuthInfoTest, SignDoc as ProtoSignDocTest, SignerInfo, TxBody},
+        tx::v1beta1::{
+            AuthInfo as ProtoAuthInfoTest, SignDoc as ProtoSignDocTest, SignerInfo, TxBody,
+        },
     };
     use k256::ecdsa::SigningKey;
 
@@ -502,7 +501,10 @@ mod tests {
 
         let auth_info = ProtoAuthInfoTest {
             signer_infos: vec![SignerInfo {
-                public_key: Some(encode_pubkey_proto(comp_pubkey, "/cosmos.crypto.secp256k1.PubKey")),
+                public_key: Some(encode_pubkey_proto(
+                    comp_pubkey,
+                    "/cosmos.crypto.secp256k1.PubKey",
+                )),
                 mode_info: None,
                 sequence: 0,
             }],

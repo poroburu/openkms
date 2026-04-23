@@ -40,8 +40,8 @@ pub struct CeremonySecrets {
 
 /// Convert a BIP-39 mnemonic + optional passphrase to a 64-byte seed.
 pub fn mnemonic_to_seed(phrase: &str, passphrase: &str) -> Result<Zeroizing<[u8; SEED_LEN]>> {
-    let mnemonic = bip39::Mnemonic::from_str(phrase)
-        .map_err(|e| anyhow!("invalid mnemonic: {e}"))?;
+    let mnemonic =
+        bip39::Mnemonic::from_str(phrase).map_err(|e| anyhow!("invalid mnemonic: {e}"))?;
     let seed = mnemonic.to_seed(passphrase);
     Ok(Zeroizing::new(seed))
 }
@@ -91,10 +91,7 @@ pub fn derive_ceremony(seed: &[u8; SEED_LEN]) -> CeremonySecrets {
 ///
 /// Suitable for Cosmos (`m/44'/118'/...'`), Ethermint (`m/44'/60'/...`), and
 /// EVM (`m/44'/60'/...`). Returns the 32-byte private scalar.
-pub fn derive_secp256k1(
-    seed: &[u8; SEED_LEN],
-    path: &str,
-) -> Result<Zeroizing<[u8; KEY_LEN]>> {
+pub fn derive_secp256k1(seed: &[u8; SEED_LEN], path: &str) -> Result<Zeroizing<[u8; KEY_LEN]>> {
     let dp: bip32::DerivationPath = path
         .parse()
         .with_context(|| format!("failed to parse BIP32 path {path:?}"))?;
@@ -110,10 +107,7 @@ pub fn derive_secp256k1(
 ///
 /// SLIP-10 is Solana/Phantom-compatible for `m/44'/501'/N'/0'`. All child
 /// indexes are treated as hardened (Ed25519 has no unhardened derivation).
-pub fn derive_ed25519(
-    seed: &[u8; SEED_LEN],
-    path: &str,
-) -> Result<Zeroizing<[u8; KEY_LEN]>> {
+pub fn derive_ed25519(seed: &[u8; SEED_LEN], path: &str) -> Result<Zeroizing<[u8; KEY_LEN]>> {
     let indexes = parse_hardened_indexes(path)?;
     let sk = slip10_ed25519::derive_ed25519_private_key(seed, &indexes);
     Ok(Zeroizing::new(sk))
@@ -137,7 +131,9 @@ fn parse_hardened_indexes(path: &str) -> Result<Vec<u32>> {
             .parse()
             .with_context(|| format!("invalid index {part:?} in path {path:?}"))?;
         if idx & 0x8000_0000 != 0 {
-            return Err(anyhow!("index {part:?} too large (MSB reserved for hardening)"));
+            return Err(anyhow!(
+                "index {part:?} too large (MSB reserved for hardening)"
+            ));
         }
         out.push(idx);
     }
@@ -152,8 +148,14 @@ mod tests {
     fn ceremony_outputs_are_distinct() {
         let seed = [0u8; SEED_LEN];
         let s = derive_ceremony(&seed);
-        assert_ne!(s.ceremony_password.as_slice(), s.provisioner_password.as_slice());
-        assert_ne!(s.provisioner_password.as_slice(), s.signer_password.as_slice());
+        assert_ne!(
+            s.ceremony_password.as_slice(),
+            s.provisioner_password.as_slice()
+        );
+        assert_ne!(
+            s.provisioner_password.as_slice(),
+            s.signer_password.as_slice()
+        );
         assert_ne!(s.signer_password.as_slice(), s.wrap_key.as_slice());
     }
 
@@ -162,7 +164,10 @@ mod tests {
         let seed = [0u8; SEED_LEN];
         let a = derive_ceremony(&seed);
         let b = derive_ceremony(&seed);
-        assert_eq!(a.ceremony_password.as_slice(), b.ceremony_password.as_slice());
+        assert_eq!(
+            a.ceremony_password.as_slice(),
+            b.ceremony_password.as_slice()
+        );
         assert_eq!(a.wrap_key.as_slice(), b.wrap_key.as_slice());
     }
 
