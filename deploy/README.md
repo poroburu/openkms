@@ -11,6 +11,8 @@ attached to.
   exposes the HSM over `http://127.0.0.1:12345`.
 - `99-yubihsm.rules` — udev rule that gives `plugdev` access to the HSM USB
   device node (install into `/etc/udev/rules.d/`).
+- `../examples/*` — placeholder config and secret file templates for first
+  bootstrapping. Replace the placeholder contents before starting the service.
 
 ## First-time install
 
@@ -60,3 +62,6 @@ Both units are written with a deny-by-default posture:
 
 Review the unit files and tune the `IPAddressAllow=` entries and
 `MemoryHigh=`/`TasksMax=` to match the footprint of your homelab.
+
+For remote smoke tests against a staging deployment, see
+[`../docs/remote-e2e.md`](../docs/remote-e2e.md).

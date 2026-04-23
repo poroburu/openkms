@@ -1,0 +1,60 @@
+[server]
+listen             = "127.0.0.1:9443"
+signer_token_file  = "/etc/openkms/signer.token"
+admin_token_file   = "/etc/openkms/admin.token"
+inflight_limit     = 64
+replay_window_secs = 120
+
+[hsm]
+connector_url = "http://127.0.0.1:12345"
+auth_key_id   = 3
+password_file = "/etc/openkms/hsm-password"
+
+[audit]
+path          = "/var/lib/openkms/audit.jsonl"
+hmac_key_file = "/etc/openkms/audit-hmac.key"
+
+state_dir = "/var/lib/openkms"
+
+[cosmos]
+accepted_pubkey_type_urls = [
+  "/cosmos.crypto.secp256k1.PubKey",
+  "/ethermint.crypto.v1.ethsecp256k1.PubKey",
+  "/injective.crypto.v1beta1.ethsecp256k1.PubKey",
+]
+
+[[keys]]
+label            = "cosmos-hub-0"
+chain            = "cosmos"
+object_id        = 0x0100
+derivation_path  = "m/44'/118'/0'/0/0"
+address_style    = "cosmos"
+default_hrp      = "cosmos"
+
+[keys.policy]
+enabled              = true
+max_signs_per_minute = 6
+max_signs_per_hour   = 120
+max_signs_per_day    = 500
+daily_cap_lamports   = "5000000000"
+per_tx_cap_lamports  = "500000000"
+
+  [[keys.policy.allowed_messages]]
+  type_url           = "/cosmos.bank.v1beta1.MsgSend"
+  allowed_recipients = ["cosmos1replace_me"]
+  per_tx_cap         = { uatom = "500000000" }
+
+[[keys]]
+label     = "solana-hot-0"
+chain     = "solana"
+object_id = 0x0101
+
+[keys.policy]
+enabled              = true
+max_signs_per_minute = 30
+max_signs_per_day    = 5000
+per_tx_cap_lamports  = "5000000000"
+
+  [[keys.policy.allowed_programs]]
+  id      = "11111111111111111111111111111111"
+  comment = "system transfers"

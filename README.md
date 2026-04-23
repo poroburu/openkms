@@ -6,10 +6,10 @@ trading agent such as [Openclaw](#openclaw-integration): small, deny-by-default,
 and never emits raw key material.
 
 ```
-┌─────────────────────┐     HTTPS+Bearer      ┌────────────────────────┐
+┌─────────────────────┐      HTTP+Bearer      ┌────────────────────────┐
 │  Openclaw strategy  │  ───────────────────► │  openKMS HTTP server   │
-│  (constructs tx)    │                       │  axum + tower::Buffer  │
-└─────────────────────┘                       │  policy + audit + ... │
+│  (constructs tx)    │                       │  axum + policy + audit │
+└─────────────────────┘                       │  replay + metrics      │
                                               │                        │
                                               │ Arc<Mutex<Client>>      │
                                               └────────────┬───────────┘
@@ -56,7 +56,7 @@ and never emits raw key material.
   a replacement from the same mnemonic.
 - **Per-key policy engine.** Per-minute / per-hour / per-day rate limits,
   per-tx amount caps, rolling daily spend caps, program / Msg-type /
-  recipient allowlists, and a kill switch — all hot-reloadable.
+  recipient allowlists, and a kill switch.
 - **Replay cache.** Bounded LRU of signing-digest → signature pairs. Safe
   because Ed25519 is deterministic and ECDSA uses RFC-6979.
 - **Audit log.** Append-only JSONL with optional HMAC-SHA256 chain for
@@ -68,6 +68,10 @@ and never emits raw key material.
   blockchain-independent.
 
 ## Security model
+
+The service itself speaks plain HTTP. Keep it on loopback, over an SSH tunnel,
+or behind a reverse proxy / load balancer that terminates TLS before exposing
+it on a wider network.
 
 ### What the HSM guarantees
 
@@ -111,7 +115,7 @@ and never emits raw key material.
 | --------------------------- | -------------------------------------------------------------------------- |
 | HSM lost / destroyed        | Buy new HSM → `openkms setup --mnemonic-file <m>` → `openkms restore`.     |
 | Auth key password compromised | `openkms setup` (factory reset) → chain accounts remain because keys were `EXPORTABLE_UNDER_WRAP`d before the reset. |
-| Policy bug (unexpected sign) | Admin `POST /admin/keys/<label>/disable`, investigate `audit.jsonl`, edit `config.toml`, hot-reload. |
+| Policy bug (unexpected sign) | Admin `POST /admin/keys/<label>/disable`, investigate `audit.jsonl`, edit `config.toml`, restart the service. |
 | Mnemonic compromised        | **All bets off** — rotate every on-chain account. The mnemonic is the root of trust. |
 | Raspberry Pi compromised    | Revoke signer bearer token; disable all keys from a safe machine; rotate on-chain.                 |
 
@@ -287,8 +291,10 @@ Each `[keys.policy]` block is evaluated in this order, fail-closed:
    category (i.e. `allowed_messages = []` means "no Cosmos Msg types
    are permitted from this key").
 
-You can edit the TOML and hot-reload with `SIGHUP` — rate limit buckets
-and daily counters are preserved across reload (they're keyed by label).
+The policy engine has an internal `reload` path that preserves runtime
+counters by key label, but the `openkms run` binary does not currently wire
+that to `SIGHUP` or another live config-reload hook. Today, edit the TOML and
+restart the service to apply changes.
 
 ## HTTP API
 
@@ -322,14 +328,12 @@ of `signer_token_file`. Admin endpoints use a separate token.
 Request:
 ```json
 {
-  "key_label": "solana-hot-0",
+  "label": "solana-hot-0",
   "expected_chain_id": "mainnet-beta",
-  "payload": {
-    "message_b64": "<base64 VersionedMessage>",
-    "address_lookup_tables": [
-      { "key": "<ALT pubkey>", "addresses": ["<base58>", "..."] }
-    ]
-  }
+  "message_b64": "<base64 VersionedMessage>",
+  "address_lookup_tables": [
+    { "key": "<ALT pubkey>", "addresses": ["<base58>", "..."] }
+  ]
 }
 ```
 
@@ -343,10 +347,9 @@ Response:
 Request:
 ```json
 {
-  "key_label": "cosmos-hub-0",
-  "payload": {
-    "sign_doc_bytes_b64": "<base64 proto-encoded SignDoc>"
-  }
+  "label": "cosmos-hub-0",
+  "sign_doc_b64": "<base64 proto-encoded SignDoc>",
+  "expected_chain_id": "cosmoshub-4"
 }
 ```
 
@@ -382,8 +385,8 @@ curl -sX POST http://127.0.0.1:9443/sign/solana \
   -H "Authorization: Bearer $SIGNER_TOKEN" \
   -H "content-type: application/json" \
   -d "$(cat <<EOF
-{ "key_label": "solana-hot-0",
-  "payload": { "message_b64": "$MSG_B64" } }
+{ "label": "solana-hot-0",
+  "message_b64": "$MSG_B64" }
 EOF
 )"
 
@@ -392,8 +395,9 @@ curl -sX POST http://127.0.0.1:9443/sign/cosmos \
   -H "Authorization: Bearer $SIGNER_TOKEN" \
   -H "content-type: application/json" \
   -d "$(cat <<EOF
-{ "key_label": "cosmos-hub-0",
-  "payload": { "sign_doc_bytes_b64": "$SIGN_DOC_B64" } }
+{ "label": "cosmos-hub-0",
+  "sign_doc_b64": "$SIGN_DOC_B64",
+  "expected_chain_id": "$CHAIN_ID" }
 EOF
 )"
 
@@ -446,8 +450,8 @@ See [`deploy/README.md`](deploy/README.md). Summary:
 
 ## Operations
 
-- **Hot reload** — `sudo systemctl kill -s SIGHUP openkms` reloads the
-  config TOML (rate-limit buckets and daily counters are preserved).
+- **Config changes** — update `/etc/openkms/config.toml` and restart the
+  service. There is no live `SIGHUP` reload hook in the current binary.
 - **Kill switch** —
   `curl -HBearer ... /admin/keys/<label>/disable`. Persists in
   `/var/lib/openkms/key-flags.json`, so a restart keeps the switch off.
@@ -477,14 +481,26 @@ decrypt the wrapped signing keys.
 ## Testing
 
 ```bash
-cargo test                          # unit tests + in-process integration
+cargo test                          # unit tests + integration tests over real TCP sockets
 cargo test --test integration       # integration tests explicitly
 
-# Hardware tests (talks to a real YubiHSM2 via yubihsm-connector).
+# Hardware tests (talk to a real YubiHSM2 via yubihsm-connector).
 OPENKMS_HARDWARE_TESTS=1 cargo test --test integration -- --ignored
 ```
 
-Unit tests use `yubihsm::Connector::mockhsm` — no hardware required.
+Default tests use `yubihsm::Connector::mockhsm` and hit the server through a
+real bound socket with `reqwest` — no hardware required.
+
+The ignored hardware test is intentionally strict once enabled: if
+`OPENKMS_HARDWARE_TESTS=1`, an unreachable connector fails the run instead of
+silently skipping. That keeps "green" hardware reports honest.
+
+For clean-machine validation, see the checked-in GitHub Actions workflow in
+`.github/workflows/ci.yml`.
+
+For staging smoke tests against a real remote deployment, see
+[`docs/remote-e2e.md`](docs/remote-e2e.md) and
+`.github/workflows/remote-e2e.yml`.
 
 ## Architecture
 
@@ -508,7 +524,7 @@ src/
 └── server.rs      axum router wiring everything together
 
 tests/
-└── integration.rs end-to-end tests spawning the server on an ephemeral port
+└── integration.rs end-to-end tests hitting the server over a real TCP socket
                    + hardware-gated tests (#[ignore]) for the real HSM
 ```
 
