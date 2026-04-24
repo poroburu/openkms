@@ -123,6 +123,46 @@ print(tag)
 
 COSMOS_CLI_IMAGE="$(resolve_cosmos_cli_image)"
 
+# Optional broadcast env lines for broadcast-keys.env (Cosmos ICS Provider testnet).
+COSMOS_BROADCAST_ENV_SNIPPET="$(
+  python3 - "$COSMOS_CHAIN_REGISTRY_URL" 200000 <<'PY'
+import json, math, sys, urllib.request
+
+url = sys.argv[1]
+gas = int(sys.argv[2])
+with urllib.request.urlopen(url) as r:
+    j = json.load(r)
+
+rests = (j.get("apis") or {}).get("rest") or []
+if not rests:
+    raise SystemExit("chain.json: missing apis.rest")
+rest = str(rests[0].get("address") or "").strip()
+fts = (j.get("fees") or {}).get("fee_tokens") or []
+if not fts:
+    raise SystemExit("chain.json: missing fees.fee_tokens")
+ft = fts[0]
+denom = str(ft.get("denom") or "").strip()
+price = None
+for key in ("average_gas_price", "low_gas_price", "high_gas_price", "fixed_min_gas_price"):
+    v = ft.get(key)
+    if v is not None and v != "":
+        price = float(v)
+        break
+if price is None:
+    price = 0.02
+amount = max(1, int(math.ceil(price * gas)))
+cid = str(j.get("chain_id") or "").strip()
+hrp = str(j.get("bech32_prefix") or "cosmos").strip()
+print(f"OPENKMS_COSMOS_REST_URL={rest}")
+print(f"OPENKMS_COSMOS_FEE_DENOM={denom}")
+print(f"OPENKMS_COSMOS_FEE_AMOUNT={amount}")
+if cid:
+    print(f"OPENKMS_COSMOS_CHAIN_ID={cid}")
+if hrp:
+    print(f"OPENKMS_COSMOS_HRP={hrp}")
+PY
+)" || COSMOS_BROADCAST_ENV_SNIPPET=""
+
 preflight_output_dirs() {
   local dirs=()
   case "$TARGET" in
@@ -286,6 +326,12 @@ esac
     echo "# Cosmos"
     echo "OPENKMS_COSMOS_SIGNER_SCALAR_B64=$cosmos_scalar_b64"
     echo "OPENKMS_COSMOS_SIGNER_ADDRESS=$cosmos_address"
+    echo
+    echo "# Cosmos broadcast (from chain-registry: testnets/cosmosicsprovidertestnet/chain.json)"
+    echo "OPENKMS_COSMOS_CHAIN_REGISTRY_URL=$COSMOS_CHAIN_REGISTRY_URL"
+    if [[ -n "${COSMOS_BROADCAST_ENV_SNIPPET:-}" ]]; then
+      printf '%s\n' "$COSMOS_BROADCAST_ENV_SNIPPET"
+    fi
     echo
   fi
 } > "$ENV_FILE"
