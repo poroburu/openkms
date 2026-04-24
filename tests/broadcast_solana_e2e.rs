@@ -4,7 +4,20 @@
 //!
 //! Ignored by default. Opt in with:
 //!
-//!   OPENKMS_BROADCAST_TESTS=1 cargo test --test broadcast_solana_e2e -- --ignored
+//! Prefer `./scripts/run_broadcast_e2e.sh solana` (see `docs/broadcast-e2e.md`).
+//! Manual equivalent:
+//!
+//! ```text
+//! set -a && source ./.tmp/broadcast-keys/broadcast-keys.env && set +a
+//! export OPENKMS_SOLANA_RPC_URL="https://api.devnet.solana.com"
+//! OPENKMS_BROADCAST_TESTS=1 cargo test --test broadcast_solana_e2e -- --ignored --nocapture
+//! ```
+//!
+//! Optional: `OPENKMS_SOLANA_CHAIN_ID` (default `devnet`) must match the cluster
+//! you use with `OPENKMS_SOLANA_RPC_URL`.
+//!
+//! Fund the signer on the target cluster before running; the test does not
+//! obtain SOL automatically. See `docs/broadcast-e2e.md`.
 
 mod common;
 
@@ -25,7 +38,6 @@ use solana_sdk::{
 use solana_system_interface::instruction as system_instruction;
 
 const SIGNER_OBJECT_ID: u16 = 0x0201;
-const SOLANA_CHAIN_ID: &str = "devnet";
 
 fn signer_pubkey_from_seed(seed: &[u8; 32]) -> Pubkey {
     let sk = SigningKey::from_bytes(seed);
@@ -145,18 +157,25 @@ async fn broadcasts_devnet_transfer_through_local_signer() {
 
     let rpc_url = common::require_env("OPENKMS_SOLANA_RPC_URL");
     let signer_seed = common::decode_b64_32("OPENKMS_SOLANA_SIGNER_SEED_B64");
+    let chain_id = common::solana_sign_chain_id();
     let lamports = common::env_u64("OPENKMS_SOLANA_TRANSFER_LAMPORTS", 5_000);
+    let fee_reserve = common::env_u64("OPENKMS_SOLANA_FEE_RESERVE_LAMPORTS", 50_000);
     let confirm_timeout_secs = common::env_u64("OPENKMS_SOLANA_CONFIRM_TIMEOUT_SECS", 90);
 
     let signer_pubkey = signer_pubkey_from_seed(&signer_seed);
+    eprintln!(
+        "broadcast_solana_e2e: rpc_url={rpc_url} signer={signer_pubkey} expected_chain_id={chain_id}"
+    );
     let recipient = Pubkey::new_unique();
+    let min_balance = lamports.saturating_add(fee_reserve);
     let balance = get_balance(&rpc_url, &signer_pubkey)
         .await
         .expect("query signer balance");
     assert!(
-        balance > lamports,
-        "signer balance {balance} is too low for a {lamports} lamport transfer"
+        balance > min_balance,
+        "signer balance {balance} lamports is at or below the required {min_balance} (transfer {lamports} + fee reserve {fee_reserve}); fund {signer_pubkey} on cluster {chain_id} (see docs/broadcast-e2e.md)"
     );
+    eprintln!("broadcast_solana_e2e: signer balance ok: {balance} lamports (need > {min_balance})");
 
     let dir = common::tmp_dir("solana-broadcast");
     let audit = dir.join("audit.jsonl");
@@ -175,19 +194,19 @@ async fn broadcasts_devnet_transfer_through_local_signer() {
     let versioned = VersionedMessage::Legacy(message);
     let raw_message = versioned.serialize();
 
-    let response: Value = reqwest::Client::new()
+    let sign_resp = reqwest::Client::new()
         .post(format!("{}/sign/solana", server.base))
         .bearer_auth(&server.signer_token)
         .json(&json!({
             "label": "sol-broadcast",
             "message_b64": B64.encode(&raw_message),
-            "expected_chain_id": SOLANA_CHAIN_ID,
+            "expected_chain_id": chain_id,
         }))
         .send()
         .await
-        .expect("POST /sign/solana")
-        .error_for_status()
-        .expect("sign response status")
+        .expect("POST /sign/solana");
+    let sign_resp = common::http_success_or_panic(sign_resp, "POST /sign/solana").await;
+    let response: Value = sign_resp
         .json()
         .await
         .expect("sign response JSON");

@@ -60,6 +60,26 @@ pub fn decode_b64_32(name: &str) -> [u8; 32] {
         .unwrap_or_else(|_| panic!("{name} must decode to exactly 32 bytes"))
 }
 
+/// `expected_chain_id` for `/sign/solana` (cluster label for audit/policy).
+/// Defaults to `devnet`; set `OPENKMS_SOLANA_CHAIN_ID=testnet` when using a
+/// testnet RPC endpoint.
+pub fn solana_sign_chain_id() -> String {
+    std::env::var("OPENKMS_SOLANA_CHAIN_ID").unwrap_or_else(|_| "devnet".into())
+}
+
+/// Turn a failed HTTP response into a panic that includes the response body.
+pub async fn http_success_or_panic(resp: reqwest::Response, context: &str) -> reqwest::Response {
+    let status = resp.status();
+    if status.is_success() {
+        return resp;
+    }
+    let body = resp
+        .text()
+        .await
+        .unwrap_or_else(|e| format!("<failed to read body: {e}>"));
+    panic!("{context}: HTTP {status}: {body}");
+}
+
 /// Create a fresh, unique temp directory under `$TMPDIR`. Cleaned up
 /// implicitly by tests being short-lived; we don't bother removing on drop.
 pub fn tmp_dir(tag: &str) -> PathBuf {

@@ -4,7 +4,24 @@
 //!
 //! Ignored by default. Opt in with:
 //!
-//!   OPENKMS_BROADCAST_TESTS=1 cargo test --test broadcast_cosmos_e2e -- --ignored
+//! Prefer `./scripts/run_broadcast_e2e.sh cosmos` (see `docs/broadcast-e2e.md`).
+//! Manual equivalent:
+//!
+//! ```text
+//! set -a && source ./.tmp/broadcast-keys/broadcast-keys.env && set +a
+//! OPENKMS_BROADCAST_TESTS=1 cargo test --test broadcast_cosmos_e2e -- --ignored --nocapture
+//! ```
+//!
+//! With `./scripts/run_broadcast_e2e.sh cosmos`, REST/fee/chain id default from
+//! chain-registry when unset (see `docs/broadcast-e2e.md`). Export
+//! `OPENKMS_COSMOS_*` yourself only to override.
+//!
+//! If the spend denomination for `MsgSend` differs from the fee denom, set
+//! `OPENKMS_COSMOS_AMOUNT_DENOM` (defaults to `OPENKMS_COSMOS_FEE_DENOM`).
+//!
+//! The signer address must **already exist on chain** (typically at least one
+//! inbound transfer so auth state is created). An unfunded brand-new key shows
+//! as HTTP 404 on `.../cosmos/auth/v1beta1/accounts/{addr}`.
 
 mod common;
 
@@ -37,6 +54,7 @@ struct BuildSignDocArgs<'a> {
     from_addr: &'a str,
     to_addr: &'a str,
     amount: u64,
+    amount_denom: &'a str,
     fee_amount: &'a str,
     fee_denom: &'a str,
     gas_limit: u64,
@@ -101,20 +119,31 @@ async fn fetch_chain_id(rest_url: &str) -> Result<String> {
 }
 
 async fn fetch_account_state(rest_url: &str, address: &str) -> Result<(u64, u64)> {
-    let body: Value = reqwest::Client::new()
-        .get(format!(
-            "{}/cosmos/auth/v1beta1/accounts/{}",
-            trim_rest_base(rest_url),
-            address
-        ))
+    let url = format!(
+        "{}/cosmos/auth/v1beta1/accounts/{}",
+        trim_rest_base(rest_url),
+        address
+    );
+    let resp = reqwest::Client::new()
+        .get(&url)
         .send()
         .await
-        .context("GET account")?
-        .error_for_status()
-        .context("account query returned error status")?
-        .json()
-        .await
-        .context("decode account JSON")?;
+        .context("GET account")?;
+    let status = resp.status();
+    let body_text = resp.text().await.context("read account response body")?;
+    if !status.is_success() {
+        let hint = if status == reqwest::StatusCode::NOT_FOUND {
+            format!(
+                "account {address} is not on chain yet — send it a small {hint_denom} transfer first so auth state exists (404 from LCD is normal for never-funded keys)",
+                hint_denom = std::env::var("OPENKMS_COSMOS_FEE_DENOM")
+                    .unwrap_or_else(|_| "fee token".into())
+            )
+        } else {
+            format!("GET account returned HTTP {status}")
+        };
+        bail!("{hint}; url={url}; body={body_text}");
+    }
+    let body: Value = serde_json::from_str(&body_text).context("decode account JSON")?;
     Ok((
         parse_u64_field(&body, "account_number")?,
         parse_u64_field(&body, "sequence")?,
@@ -128,6 +157,7 @@ fn build_sign_doc(args: BuildSignDocArgs<'_>) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
         from_addr,
         to_addr,
         amount,
+        amount_denom,
         fee_amount,
         fee_denom,
         gas_limit,
@@ -140,7 +170,7 @@ fn build_sign_doc(args: BuildSignDocArgs<'_>) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
         from_address: from_addr.to_string(),
         to_address: to_addr.to_string(),
         amount: vec![Coin {
-            denom: fee_denom.to_string(),
+            denom: amount_denom.to_string(),
             amount: amount.to_string(),
         }],
     }
@@ -211,7 +241,7 @@ fn build_sign_doc(args: BuildSignDocArgs<'_>) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
 }
 
 async fn broadcast_tx(rest_url: &str, tx_bytes: &[u8]) -> Result<String> {
-    let resp: Value = reqwest::Client::new()
+    let http = reqwest::Client::new()
         .post(format!(
             "{}/cosmos/tx/v1beta1/txs",
             trim_rest_base(rest_url)
@@ -222,12 +252,9 @@ async fn broadcast_tx(rest_url: &str, tx_bytes: &[u8]) -> Result<String> {
         }))
         .send()
         .await
-        .context("POST broadcast tx")?
-        .error_for_status()
-        .context("broadcast tx returned error status")?
-        .json()
-        .await
-        .context("decode broadcast tx JSON")?;
+        .context("POST broadcast tx")?;
+    let http = common::http_success_or_panic(http, "POST /cosmos/tx/v1beta1/txs").await;
+    let resp: Value = http.json().await.context("decode broadcast tx JSON")?;
     let tx_response = resp
         .get("tx_response")
         .ok_or_else(|| anyhow!("broadcast response missing tx_response"))?;
@@ -305,6 +332,7 @@ async fn broadcasts_msg_send_through_local_signer() {
     let hrp = std::env::var("OPENKMS_COSMOS_HRP").unwrap_or_else(|_| "cosmos".into());
     let fee_denom = common::require_env("OPENKMS_COSMOS_FEE_DENOM");
     let fee_amount = common::require_env("OPENKMS_COSMOS_FEE_AMOUNT");
+    let amount_denom = std::env::var("OPENKMS_COSMOS_AMOUNT_DENOM").unwrap_or_else(|_| fee_denom.clone());
     let gas_limit = common::env_u64("OPENKMS_COSMOS_GAS_LIMIT", 200_000);
     let amount = common::env_u64("OPENKMS_COSMOS_TRANSFER_AMOUNT", 1);
     let confirm_timeout_secs = common::env_u64("OPENKMS_COSMOS_CONFIRM_TIMEOUT_SECS", 90);
@@ -316,6 +344,9 @@ async fn broadcasts_msg_send_through_local_signer() {
     let (signer_comp, signer_uncomp) = secp_pubkeys(&signer_scalar);
     let signer_addr = derive_address(&signer_comp, &signer_uncomp, AddressStyle::Cosmos, &hrp)
         .expect("derive signer address");
+    eprintln!(
+        "broadcast_cosmos_e2e: rest_url={rest_url} signer={signer_addr} chain_id={chain_id} amount_denom={amount_denom}"
+    );
     let recipient_scalar = [0x42u8; 32];
     let (recipient_comp, recipient_uncomp) = secp_pubkeys(&recipient_scalar);
     let recipient_addr = derive_address(
@@ -345,6 +376,7 @@ async fn broadcasts_msg_send_through_local_signer() {
         from_addr: &signer_addr,
         to_addr: &recipient_addr,
         amount,
+        amount_denom: &amount_denom,
         fee_amount: &fee_amount,
         fee_denom: &fee_denom,
         gas_limit,
@@ -353,7 +385,7 @@ async fn broadcasts_msg_send_through_local_signer() {
         memo: &memo,
     });
 
-    let response: Value = reqwest::Client::new()
+    let sign_resp = reqwest::Client::new()
         .post(format!("{}/sign/cosmos", server.base))
         .bearer_auth(&server.signer_token)
         .json(&json!({
@@ -363,9 +395,9 @@ async fn broadcasts_msg_send_through_local_signer() {
         }))
         .send()
         .await
-        .expect("POST /sign/cosmos")
-        .error_for_status()
-        .expect("sign response status")
+        .expect("POST /sign/cosmos");
+    let sign_resp = common::http_success_or_panic(sign_resp, "POST /sign/cosmos").await;
+    let response: Value = sign_resp
         .json()
         .await
         .expect("sign response JSON");
