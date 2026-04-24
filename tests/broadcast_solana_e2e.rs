@@ -206,10 +206,7 @@ async fn broadcasts_devnet_transfer_through_local_signer() {
         .await
         .expect("POST /sign/solana");
     let sign_resp = common::http_success_or_panic(sign_resp, "POST /sign/solana").await;
-    let response: Value = sign_resp
-        .json()
-        .await
-        .expect("sign response JSON");
+    let response: Value = sign_resp.json().await.expect("sign response JSON");
 
     let sig_b64 = response
         .get("signature_b64")

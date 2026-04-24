@@ -332,7 +332,8 @@ async fn broadcasts_msg_send_through_local_signer() {
     let hrp = std::env::var("OPENKMS_COSMOS_HRP").unwrap_or_else(|_| "cosmos".into());
     let fee_denom = common::require_env("OPENKMS_COSMOS_FEE_DENOM");
     let fee_amount = common::require_env("OPENKMS_COSMOS_FEE_AMOUNT");
-    let amount_denom = std::env::var("OPENKMS_COSMOS_AMOUNT_DENOM").unwrap_or_else(|_| fee_denom.clone());
+    let amount_denom =
+        std::env::var("OPENKMS_COSMOS_AMOUNT_DENOM").unwrap_or_else(|_| fee_denom.clone());
     let gas_limit = common::env_u64("OPENKMS_COSMOS_GAS_LIMIT", 200_000);
     let amount = common::env_u64("OPENKMS_COSMOS_TRANSFER_AMOUNT", 1);
     let confirm_timeout_secs = common::env_u64("OPENKMS_COSMOS_CONFIRM_TIMEOUT_SECS", 90);
@@ -397,10 +398,7 @@ async fn broadcasts_msg_send_through_local_signer() {
         .await
         .expect("POST /sign/cosmos");
     let sign_resp = common::http_success_or_panic(sign_resp, "POST /sign/cosmos").await;
-    let response: Value = sign_resp
-        .json()
-        .await
-        .expect("sign response JSON");
+    let response: Value = sign_resp.json().await.expect("sign response JSON");
     let sig_b64 = response
         .get("signature_b64")
         .and_then(Value::as_str)
