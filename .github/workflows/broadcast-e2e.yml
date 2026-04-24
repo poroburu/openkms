@@ -1,3 +1,7 @@
+# Live broadcast tests: see docs/broadcast-e2e.md for full env reference.
+# Secrets: OPENKMS_SOLANA_RPC_URL, OPENKMS_SOLANA_SIGNER_SEED_B64,
+#   OPENKMS_COSMOS_REST_URL, OPENKMS_COSMOS_SIGNER_SCALAR_B64
+# Repo variables (optional unless noted in docs): fee denom/amount and tuning knobs.
 name: Broadcast E2E
 
 on:
