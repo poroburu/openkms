@@ -23,6 +23,8 @@ warn_if_base_url_placeholder
 
 run_health() {
   local health_json="$1"
+  # First /health may return "hsm_up": null (cold start); second returns a boolean.
+  curl -fsS "${OPENKMS_BASE_URL}/health" -o /dev/null
   curl -fsS "${OPENKMS_BASE_URL}/health" > "$health_json"
   python3 - "$health_json" <<'PY'
 import json

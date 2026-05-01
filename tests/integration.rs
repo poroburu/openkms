@@ -162,7 +162,22 @@ async fn serves_health_and_keys_over_real_http() {
         .await
         .expect("health body");
     assert_eq!(health["status"], "ok");
-    assert_eq!(health["hsm_up"], true);
+    assert!(
+        health["hsm_up"].is_null() || health["hsm_up"] == true,
+        "expected null or true on first health"
+    );
+
+    let health2: serde_json::Value = client
+        .get(format!("{base_url}/health"))
+        .send()
+        .await
+        .expect("health request 2")
+        .error_for_status()
+        .expect("health status 2")
+        .json()
+        .await
+        .expect("health body 2");
+    assert_eq!(health2["hsm_up"], true);
 
     let keys: serde_json::Value = client
         .get(format!("{base_url}/keys"))
