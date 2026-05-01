@@ -79,4 +79,17 @@ printf '%s' "${OPENKMS_SIGN_REQUEST_B64}" | base64 --decode >"$req_file"
 export OPENKMS_SIGN_REQUEST_FILE="$req_file"
 
 chmod +x ./scripts/remote_e2e_smoke.sh
-exec ./scripts/remote_e2e_smoke.sh
+# Do not use `if ./remote_e2e_smoke.sh; then ... fi` and then `$?` — when the test
+# fails, bash can leave `$?` as 0 for the whole `if`, so the job would falsely succeed.
+set +e
+./scripts/remote_e2e_smoke.sh
+ec=$?
+set -e
+if [[ "$ec" -ne 0 && "${ACT:-}" == "true" ]]; then
+  echo "remote-e2e: smoke failed under ACT=true (exit $ec)." >&2
+  echo "  The workflow expects Tailscale in the act container, then curl to OPENKMS_BASE_URL" >&2
+  echo "  (your Pi on the tailnet). If Tailscale failed or curl cannot reach the Pi, see" >&2
+  echo "  docs/remote-e2e.md (Local gh act: --container-options NET_ADMIN + /dev/net/tun;" >&2
+  echo "  ACLs, Pi listen address)." >&2
+fi
+exit "$ec"
