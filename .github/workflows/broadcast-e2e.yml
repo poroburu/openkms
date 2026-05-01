@@ -1,7 +1,8 @@
 # Live broadcast tests: see docs/broadcast-e2e.md for full env reference.
-# Secrets: OPENKMS_SOLANA_RPC_URL, OPENKMS_SOLANA_SIGNER_SEED_B64,
-#   OPENKMS_COSMOS_REST_URL, OPENKMS_COSMOS_SIGNER_SCALAR_B64
-# Repo variables (optional unless noted in docs): fee denom/amount and tuning knobs.
+# Jobs invoke scripts/run_broadcast_e2e.sh (same defaults as local runs).
+# Secrets: OPENKMS_SOLANA_SIGNER_SEED_B64, OPENKMS_COSMOS_SIGNER_SCALAR_B64,
+#   OPENKMS_COSMOS_REST_URL; OPENKMS_SOLANA_RPC_URL optional (script defaults devnet).
+# Repo variables: optional overrides (fee denom/amount, gas, timeouts, etc.).
 name: Broadcast E2E
 
 on:
@@ -28,13 +29,10 @@ jobs:
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
 
-      - name: Validate workflow configuration
-        run: |
-          test -n "${OPENKMS_SOLANA_RPC_URL}" || { echo "missing secret OPENKMS_SOLANA_RPC_URL"; exit 1; }
-          test -n "${OPENKMS_SOLANA_SIGNER_SEED_B64}" || { echo "missing secret OPENKMS_SOLANA_SIGNER_SEED_B64"; exit 1; }
-
       - name: Run Solana broadcast test
-        run: cargo test --test broadcast_solana_e2e -- --ignored --nocapture
+        run: |
+          chmod +x ./scripts/run_broadcast_e2e.sh
+          ./scripts/run_broadcast_e2e.sh solana
 
   cosmos:
     name: Cosmos broadcast
@@ -61,12 +59,7 @@ jobs:
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
 
-      - name: Validate workflow configuration
-        run: |
-          test -n "${OPENKMS_COSMOS_REST_URL}" || { echo "missing secret OPENKMS_COSMOS_REST_URL"; exit 1; }
-          test -n "${OPENKMS_COSMOS_SIGNER_SCALAR_B64}" || { echo "missing secret OPENKMS_COSMOS_SIGNER_SCALAR_B64"; exit 1; }
-          test -n "${OPENKMS_COSMOS_FEE_DENOM}" || { echo "missing variable OPENKMS_COSMOS_FEE_DENOM"; exit 1; }
-          test -n "${OPENKMS_COSMOS_FEE_AMOUNT}" || { echo "missing variable OPENKMS_COSMOS_FEE_AMOUNT"; exit 1; }
-
       - name: Run Cosmos broadcast test
-        run: cargo test --test broadcast_cosmos_e2e -- --ignored --nocapture
+        run: |
+          chmod +x ./scripts/run_broadcast_e2e.sh
+          ./scripts/run_broadcast_e2e.sh cosmos

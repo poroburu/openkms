@@ -2,13 +2,13 @@
 
 This repo now carries three separate automation lanes:
 
-- `.github/workflows/ci.yml` for clean-machine repository checks against `mockhsm`
+- `.github/workflows/ci.yml` for format, clippy, tests, and the mock remote shell check
 - `.github/workflows/remote-e2e.yml` for smoke tests against a real deployed
-  `openkms` instance
+  `openkms` instance (**manual** `workflow_dispatch` until you enable `push:`)
 - `.github/workflows/broadcast-e2e.yml` for live Solana and Cosmos testnet
   broadcasts through a local `openkms` server started inside GitHub Actions
 
-The broadcast lane is intentionally manual-only (`workflow_dispatch`) at first.
+The broadcast lane is intentionally **manual-only** (`workflow_dispatch`).
 It spends real testnet funds, depends on live RPC availability, and is meant to
 validate end-to-end transaction assembly and submission without turning routine
 repository checks into noisy, flaky runs.
@@ -30,6 +30,12 @@ This complements `remote-e2e.yml` rather than replacing it:
 - `broadcast-e2e.yml` proves the local client flow can sign and land a real
   transaction on-chain
 
+The **same** sign-request generator and smoke script described in
+[`remote-e2e.md`](remote-e2e.md) (`generate_remote_e2e_request.sh`, `remote_e2e_smoke.sh`)
+apply here: once the job-local server is listening, you can point **`OPENKMS_BASE_URL`**
+at it and reuse those tools for a self-contained “HTTP signing path” check without
+an external staging URL.
+
 ## Generating local key material
 
 For local dry runs, use `scripts/generate_broadcast_key_material.sh` to create
@@ -50,6 +56,15 @@ the script with `-f`:
 bash ./scripts/generate_broadcast_key_material.sh --force both ./.tmp/broadcast-keys
 ```
 
+To **only** update `broadcast-keys.env` (Solana/Cosmos tuning + chain-registry REST
+/fees, same as a fresh keygen) while **keeping** existing `solana/` and `cosmos/`
+key files—for example funded wallets—use **`--refresh-env`** (needs `curl` and
+`python3`, no Docker):
+
+```bash
+./scripts/generate_broadcast_key_material.sh --refresh-env ./.tmp/broadcast-keys
+```
+
 The script writes:
 
 - `./.tmp/broadcast-keys/broadcast-keys.env` with ready-to-export env vars,
@@ -57,11 +72,14 @@ The script writes:
   `OPENKMS_COSMOS_CLI_IMAGE` values, `OPENKMS_SOLANA_SIGNER_SEED_B64` and
   `OPENKMS_SOLANA_SIGNER_ADDRESS` (Solana), `OPENKMS_COSMOS_SIGNER_SCALAR_B64`
   and `OPENKMS_COSMOS_SIGNER_ADDRESS` (Cosmos), `OPENKMS_COSMOS_CHAIN_REGISTRY_URL`,
-  plus Cosmos broadcast lines (`OPENKMS_COSMOS_REST_URL`, fee denom/amount,
+  plus Solana cluster lines (`OPENKMS_SOLANA_RPC_URL`, `OPENKMS_SOLANA_CHAIN_ID`,
+  `OPENKMS_SOLANA_TRANSFER_LAMPORTS`) matching the broadcast test defaults, Cosmos
+  broadcast lines (`OPENKMS_COSMOS_REST_URL`, fee denom/amount,
   optional `OPENKMS_COSMOS_CHAIN_ID` / `OPENKMS_COSMOS_HRP`) from the same
-  `chain.json` used for the Gaia image tag — enough to run
-  `run_broadcast_e2e.sh cosmos` after sourcing (RPC for Solana still comes from
-  the run script default or `OPENKMS_SOLANA_RPC_URL`).
+  `chain.json` used for the Gaia image tag, and `OPENKMS_COSMOS_GAS_LIMIT` /
+  `OPENKMS_COSMOS_TRANSFER_AMOUNT` — enough to run `run_broadcast_e2e.sh` after
+  sourcing, and the same file can feed `generate_remote_e2e_request.sh -e` (see
+  [`remote-e2e.md`](remote-e2e.md)).
 - `solana/id.json` plus `solana/address.txt`
 - `cosmos/key.json` plus `cosmos/private.hex`
 
@@ -181,14 +199,16 @@ Defaults for REST/fee/chain metadata match the **Cosmos ICS Provider testnet**
 
 #### GitHub Actions (`.github/workflows/broadcast-e2e.yml`)
 
-The workflow runs `cargo test` directly (not `run_broadcast_e2e.sh`). Map values
-as follows; any optional variable omitted in the workflow uses the test binary
-defaults above.
+Each job runs `scripts/run_broadcast_e2e.sh` with the same `solana` / `cosmos`
+target you would use locally, so **Cosmos fee denom/amount** (and REST) follow
+the same chain-registry defaults as `run_broadcast_e2e.sh` when unset. Map
+values into job `env` from secrets/vars as below; the script performs the final
+checks and runs `cargo test`.
 
 | Variable | Solana job | Cosmos job |
 | --- | --- | --- |
 | `OPENKMS_BROADCAST_TESTS` | `1` | `1` |
-| `OPENKMS_SOLANA_RPC_URL` | secret | — |
+| `OPENKMS_SOLANA_RPC_URL` | secret (optional; script defaults devnet) | — |
 | `OPENKMS_SOLANA_SIGNER_SEED_B64` | secret | — |
 | `OPENKMS_SOLANA_TRANSFER_LAMPORTS` | repo variable (optional) | — |
 | `OPENKMS_SOLANA_CONFIRM_TIMEOUT_SECS` | repo variable (optional) | — |
@@ -196,16 +216,17 @@ defaults above.
 | `OPENKMS_COSMOS_SIGNER_SCALAR_B64` | — | secret |
 | `OPENKMS_COSMOS_CHAIN_ID` | — | repo variable (optional) |
 | `OPENKMS_COSMOS_HRP` | — | repo variable (optional) |
-| `OPENKMS_COSMOS_FEE_DENOM` | — | repo variable (**required** non-empty) |
-| `OPENKMS_COSMOS_FEE_AMOUNT` | — | repo variable (**required** non-empty) |
+| `OPENKMS_COSMOS_FEE_DENOM` | — | repo variable (optional; script fills from chain-registry) |
+| `OPENKMS_COSMOS_FEE_AMOUNT` | — | repo variable (optional; script fills from chain-registry) |
 | `OPENKMS_COSMOS_GAS_LIMIT` | — | repo variable (optional) |
 | `OPENKMS_COSMOS_TRANSFER_AMOUNT` | — | repo variable (optional) |
 | `OPENKMS_COSMOS_CONFIRM_TIMEOUT_SECS` | — | repo variable (optional) |
 
 Solana job does not set `OPENKMS_SOLANA_CHAIN_ID` or
 `OPENKMS_SOLANA_FEE_RESERVE_LAMPORTS` (harness defaults apply). Cosmos job does not
-set `OPENKMS_COSMOS_CHAIN_REGISTRY_URL`, `OPENKMS_COSMOS_AMOUNT_DENOM`, or
-registry-only fields — supply REST and fees explicitly for CI.
+set `OPENKMS_COSMOS_CHAIN_REGISTRY_URL` or `OPENKMS_COSMOS_AMOUNT_DENOM` in YAML;
+omit fee vars in GitHub to match local defaults, or set repo variables to
+override chain-registry.
 
 ## Operational guidance
 
