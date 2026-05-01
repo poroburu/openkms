@@ -12,6 +12,8 @@
 #
 # Jobs delegate to scripts/run_remote_e2e_job.sh so GitHub, act, and operators
 # share one implementation (avoids drift with copy-pasted bash in YAML).
+# Staging must accept HTTPS (or HTTP) from GitHub-hosted runner IPs — see docs/remote-e2e.md
+# (reverse proxy to loopback + deploy/nginx-openkms-remote-e2e.conf.example).
 name: Remote E2E
 
 on:
