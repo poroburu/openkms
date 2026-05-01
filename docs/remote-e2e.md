@@ -13,7 +13,7 @@ This repo now carries three separate automation lanes:
 
 The remote lane is intentionally a smoke test, not a load test. Its job is to
 prove that a real deployment can answer `/health`, `/keys`, `/metrics`, and safe
-**Solana** and **Cosmos** signing requests (parallel jobs, one fixture per chain).
+**Solana** then **Cosmos** signing requests (sequential jobs, one fixture per chain; Cosmos `needs` Solana).
 
 ## Request builder and smoke runner (CI + operators)
 

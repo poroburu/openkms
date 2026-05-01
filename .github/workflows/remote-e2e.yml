@@ -1,4 +1,5 @@
-# Staging smoke against a real deployment. Each job joins your tailnet first
+# Staging smoke against a real deployment. Cosmos runs after Solana (`needs`).
+# Each job joins your tailnet first
 # (`tailscale/github-action`), then runs the same shell entrypoint as operators
 # (`scripts/run_remote_e2e_job.sh`). Set `OPENKMS_BASE_URL` to a URL reachable on
 # the tailnet (e.g. http://signer-hostname:8443). See docs/remote-e2e.md.
@@ -61,6 +62,7 @@ jobs:
 
   cosmos:
     name: Remote smoke (Cosmos)
+    needs: solana
     runs-on: ubuntu-latest
     env:
       OPENKMS_BASE_URL: ${{ secrets.OPENKMS_BASE_URL }}
@@ -72,7 +74,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      # Same Tailscale + optional ping as Solana job (separate runner).
+      # Same Tailscale + optional ping as Solana job (fresh runner; runs after solana).
       - name: Tailscale
         uses: tailscale/github-action@v4
         with:
