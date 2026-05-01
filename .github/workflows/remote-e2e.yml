@@ -20,6 +20,10 @@
 # Without Tailscale, curl would originate from GitHub’s public runner IPs — see
 # docs/remote-e2e.md (nginx + deploy/nginx-openkms-remote-e2e.conf.example, or
 # systemd drop-in for api.github.com/meta `actions` CIDRs).
+#
+# Local `act` / `gh act`: `ACT=true` skips the Tailscale step (tailscaled often fails
+# to become healthy inside the act container). Point OPENKMS_BASE_URL at the host from
+# the container (e.g. host.docker.internal) — see docs/remote-e2e.md.
 name: Remote E2E
 
 on:
@@ -43,6 +47,7 @@ jobs:
       # host (MagicDNS name, e.g. my-pi, or a 100.x tailnet IP) until it succeeds — same
       # machine as OPENKMS_BASE_URL is fine. Leave secret unset to skip waiting.
       - name: Tailscale
+        if: ${{ env.ACT != 'true' }}
         uses: tailscale/github-action@v4
         with:
           oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
@@ -70,6 +75,15 @@ jobs:
 
       # Same Tailscale + optional ping as Solana job (separate runner).
       - name: Tailscale
+        if: ${{ env.ACT != 'true' }}
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags: ${{ vars.TAILSCALE_OAUTH_TAGS || 'tag:ci' }}
+          ping: ${{ secrets.OPENKMS_TAILSCALE_PING_HOST }}
+
+      - name: Remote smoke (Cosmos)
         run: |
           chmod +x ./scripts/run_remote_e2e_job.sh ./scripts/remote_e2e_smoke.sh
           ./scripts/run_remote_e2e_job.sh cosmos

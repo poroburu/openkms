@@ -163,6 +163,15 @@ TLS, rate limits). See [`deploy/README.md`](../deploy/README.md).
 
 ### Local `gh act` and common `curl` failures
 
+**Tailscale inside act:** [nektos/act](https://github.com/nektos/act) sets **`ACT=true`**
+in the job environment. **`remote-e2e.yml`** skips the **`tailscale/github-action`** step
+when **`ACT` is `true`**, because **`tailscaled`** often never becomes healthy in the
+ephemeral Docker runner (errors like **`503 Service Unavailable: no backend`** or
+**`tailscaled.sock: no such file or directory`**). On **github.com**, **`ACT`** is unset,
+so Tailscale runs as usual. For local act, put **`OPENKMS_BASE_URL`** in `.secrets` to a
+URL the **container** can reach without tailnet access (see **`host.docker.internal`**
+below).
+
 The smoke step runs **`curl`** against **`OPENKMS_BASE_URL`** from **inside** the act
 container. `gh act` may redact the hostname in logs (`***`); compare with your
 `.secrets` when debugging.
