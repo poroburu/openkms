@@ -67,7 +67,7 @@ or from the Tailscale action.
 
 `remote-e2e.yml` reads these **secrets**:
 
-- `TAILSCALE_AUTHKEY`: [Tailscale auth key](https://tailscale.com/kb/1085/auth-keys) so each job’s runner joins your tailnet before **`curl`** (ephemeral/reusable keys work well for CI)
+- `TAILSCALE_OAUTH_CLIENT_ID` / `TAILSCALE_OAUTH_CLIENT_SECRET`: [Tailscale OAuth API client](https://tailscale.com/s/oauth-clients) with **`auth_keys`** scope and tags matching the workflow (see **`TAILSCALE_OAUTH_TAGS`** below). This avoids the deprecated **`authkey`** input on `tailscale/github-action`. ([Tailnet Lock](https://tailscale.com/kb/1226/tailnet-lock) deployments may still require a **pre-signed auth key** instead — fork the workflow to pass **`authkey`** per the action README.)
 - `OPENKMS_BASE_URL`: signer base URL **reachable from the runner after Tailscale is up** — typically **`http://<MagicDNS-name>:<port>`** or **`http://<100.x>:<port>`** on your tailnet (same string you would use from another tailnet node)
 - `OPENKMS_SIGNER_TOKEN`: signer bearer token for the staging environment
 - `OPENKMS_REMOTE_E2E_SOLANA_REQUEST_B64`: base64-encoded JSON for **`POST /sign/solana`**
@@ -75,9 +75,11 @@ or from the Tailscale action.
 
 Optional **secrets**:
 
-- `OPENKMS_TAILSCALE_PING_HOST`: hostname or **`100.x`** address to **`tailscale ping`** after join (helps with eventual consistency before smoke; leave unset to skip)
+- `OPENKMS_TAILSCALE_PING_HOST`: passed to the Tailscale action’s **`ping`** input — a **comma-separated** list of tailnet machines (MagicDNS short name like **`my-pi`**, FQDN, or **`100.x`** address) the action **`tailscale ping`**s after **`tailscale up`** until one responds (waits for mesh convergence). Often the **same host** as in **`OPENKMS_BASE_URL`** (hostname only, no `http://`). **Unset** to skip ping and go straight to smoke.
 
 Optional **variables**:
+
+- `TAILSCALE_OAUTH_TAGS`: comma-separated [ACL tags](https://tailscale.com/kb/1068/tags) for CI nodes (must match your OAuth client), e.g. **`tag:ci`**. If unset, the workflow defaults to **`tag:ci`** — create that tag on the client and allow it in ACLs to reach your signer.
 
 - `OPENKMS_EXPECT_SOLANA_KEY_LABEL`: if set, the **Solana** job asserts this label
   appears in `GET /keys`
@@ -105,8 +107,7 @@ The workflow runs **`tailscale/github-action@v4`** after checkout so smoke **`cu
 traffic goes over your **tailnet**, not from GitHub’s public **`meta` `actions`**
 addresses directly to your home IP.
 
-- **`TAILSCALE_AUTHKEY`** must be allowed by your ACLs to reach the signer (and tags
-  must match if you use tag-based ACLs).
+- **`TAILSCALE_OAUTH_*`** credentials must tag runners so your [ACLs](https://tailscale.com/kb/1018/acls) allow **`tag:ci`** (or whatever **`TAILSCALE_OAUTH_TAGS`** is) to reach the signer’s **`OPENKMS_BASE_URL`** host and port.
 - **`OPENKMS_BASE_URL`** should use a host/port the **runner can resolve and reach only
   after** Tailscale is connected (MagicDNS name of the Pi, **`100.x`**, or subnet
   router target — whatever your tailnet uses).
