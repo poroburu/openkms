@@ -105,3 +105,10 @@ overflow-checks = true
 lto = "thin"
 codegen-units = 1
 strip = "symbols"
+
+# `yubihsm`'s MockHsm uses `compile_error!` when `debug_assertions` is off, so plain
+# `--release` cannot enable the `mockhsm` feature. Use this profile for an optimized
+# `openkms --mock` binary (e.g. Pi staging): `cargo build --profile mock-release`.
+[profile.mock-release]
+inherits = "release"
+debug-assertions = true
