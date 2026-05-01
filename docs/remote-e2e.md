@@ -68,7 +68,7 @@ or from the Tailscale action.
 `remote-e2e.yml` reads these **secrets**:
 
 - `TAILSCALE_OAUTH_CLIENT_ID` / `TAILSCALE_OAUTH_CLIENT_SECRET`: [Tailscale OAuth API client](https://tailscale.com/s/oauth-clients) with **`auth_keys`** scope and tags matching the workflow (see **`TAILSCALE_OAUTH_TAGS`** below). This avoids the deprecated **`authkey`** input on `tailscale/github-action`. ([Tailnet Lock](https://tailscale.com/kb/1226/tailnet-lock) deployments may still require a **pre-signed auth key** instead — fork the workflow to pass **`authkey`** per the action README.)
-- `OPENKMS_BASE_URL`: signer base URL **reachable from the runner after Tailscale is up** — typically **`http://<MagicDNS-name>:<port>`** or **`http://<100.x>:<port>`** on your tailnet (same string you would use from another tailnet node)
+- `OPENKMS_BASE_URL`: signer URL for **github.com** (after Tailscale): tailnet **`http://…`** / **`https://…`**, or public staging URL. **Not** used as-is when **`ACT=true`** if you set **`OPENKMS_ACT_BASE_URL`** (see below).
 - `OPENKMS_SIGNER_TOKEN`: signer bearer token for the staging environment
 - `OPENKMS_REMOTE_E2E_SOLANA_REQUEST_B64`: base64-encoded JSON for **`POST /sign/solana`**
 - `OPENKMS_REMOTE_E2E_COSMOS_REQUEST_B64`: base64-encoded JSON for **`POST /sign/cosmos`**
@@ -80,6 +80,8 @@ Optional **secrets**:
 Optional **variables**:
 
 - `TAILSCALE_OAUTH_TAGS`: comma-separated [ACL tags](https://tailscale.com/kb/1068/tags) for CI nodes (must match your OAuth client), e.g. **`tag:ci`**. If unset, the workflow defaults to **`tag:ci`** — create that tag on the client and allow it in ACLs to reach your signer.
+
+- `OPENKMS_ACT_BASE_URL`: when **`ACT=true`** ([`gh act`](https://nektosact.com/) / **`act`**), the workflow uses this value for **`OPENKMS_BASE_URL`** instead of the **`OPENKMS_BASE_URL`** secret, so you can point at **`http://host.docker.internal:8443`** or **`http://172.17.0.1:8443`** while keeping the secret aimed at your real tailnet **`100.x`** / MagicDNS URL for **github.com**. Add to **`.vars`** with **`--var-file`**. If unset under **`ACT=true`**, the job still uses the secret — a **`100.x`** URL will fail from the act container because Tailscale was skipped.
 
 - `OPENKMS_EXPECT_SOLANA_KEY_LABEL`: if set, the **Solana** job asserts this label
   appears in `GET /keys`
@@ -168,9 +170,11 @@ in the job environment. **`remote-e2e.yml`** skips the **`tailscale/github-actio
 when **`ACT` is `true`**, because **`tailscaled`** often never becomes healthy in the
 ephemeral Docker runner (errors like **`503 Service Unavailable: no backend`** or
 **`tailscaled.sock: no such file or directory`**). On **github.com**, **`ACT`** is unset,
-so Tailscale runs as usual. For local act, put **`OPENKMS_BASE_URL`** in `.secrets` to a
-URL the **container** can reach without tailnet access (see **`host.docker.internal`**
-below).
+so Tailscale runs as usual. **`100.x`** or MagicDNS URLs in **`secrets.OPENKMS_BASE_URL`**
+only work on **github.com** after the Tailscale step. For **`gh act`**, set repo variable
+**`OPENKMS_ACT_BASE_URL`** (e.g. in **`.vars`**) to a URL the **Docker** container can reach
+(**`host.docker.internal`**, bridge gateway, or your host LAN IP) — see **`OPENKMS_ACT_BASE_URL`**
+under optional variables above.
 
 The smoke step runs **`curl`** against **`OPENKMS_BASE_URL`** from **inside** the act
 container. `gh act` may redact the hostname in logs (`***`); compare with your
