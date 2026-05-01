@@ -2,5 +2,5 @@
 linker = "aarch64-linux-gnu-gcc"
 
 [build]
-# Default host build target; cross with:
-#   cargo build --release --target aarch64-unknown-linux-gnu
+# Default host build target; cross with (use `--profile mock-release` if you need `--mock`):
+#   cargo build --profile mock-release --target aarch64-unknown-linux-gnu

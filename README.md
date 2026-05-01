@@ -123,16 +123,17 @@ it on a wider network.
 
 ```bash
 # 1) Build the binary (on the Pi or cross-compile with aarch64 target).
-cargo build --release
+#    `mock-release` keeps `--mock` working under optimization (see Cargo.toml).
+cargo build --profile mock-release
 
 # 2) Ceremony — ONE-TIME: create a 24-word mnemonic from the HSM's TRNG.
-./target/release/openkms --mock new-mnemonic > /secure/usb/mnemonic.txt
+./target/mock-release/openkms --mock new-mnemonic > /secure/usb/mnemonic.txt
 
 # 3) Factory-reset + provision the HSM from that mnemonic.
-./target/release/openkms setup --mnemonic-file /secure/usb/mnemonic.txt
+./target/mock-release/openkms setup --mnemonic-file /secure/usb/mnemonic.txt
 
 # 4) Provision a signing key (Path B: deterministic derivation).
-./target/release/openkms keys provision \
+./target/mock-release/openkms keys provision \
     --label cosmos-hub-0 \
     --chain cosmos \
     --object-id 0x0100 \
@@ -141,10 +142,10 @@ cargo build --release
 
 # 5) Back up every signing key to a wrap-encrypted blob. Store this next
 # to the mnemonic; it can be restored onto a replacement HSM.
-./target/release/openkms backup --out /secure/usb/openkms-backup.json
+./target/mock-release/openkms backup --out /secure/usb/openkms-backup.json
 
 # 6) Run the service.
-./target/release/openkms run
+./target/mock-release/openkms run
 ```
 
 ## Ceremony
