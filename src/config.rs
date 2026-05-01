@@ -10,7 +10,11 @@
 //!     etc.) — cheap parse-check so typos surface at service boot rather
 //!     than at first sign.
 
-use std::{collections::HashSet, fs, path::{Path, PathBuf}};
+use std::{
+    collections::HashSet,
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};

@@ -181,6 +181,7 @@ struct RestoreArgs {
 }
 
 #[derive(Subcommand, Debug)]
+#[allow(clippy::enum_variant_names)] // clap subcommands; `Print*` matches operator-facing docs
 enum CeremonyCommand {
     /// Print 64 hex chars for `hsm-password` after `setup` (signer auth key #3).
     PrintSignerPassword(CeremonyMnemonicArgs),
@@ -364,22 +365,19 @@ async fn setup(cli: &CliCtx, args: SetupArgs) -> Result<()> {
     // auth key without reset-device capability — the module is unchanged.
     // After a real reset, mnemonic-derived keys at #2/#3 are gone; if we can
     // still open as provisioner #2, reset never took effect.
-    match Hsm::open_http(
+    if let Ok(stale) = Hsm::open_http(
         &connector_str,
         ids::PROVISIONER_AUTH_KEY_ID,
         secrets.provisioner_password.as_slice(),
     ) {
-        Ok(stale) => {
-            drop(stale);
-            bail!(
-                "`reset_device` did not wipe this YubiHSM: provisioner auth key #{} still accepts your mnemonic-derived password. \
-                 Sessions opened via provisioner recovery cannot reset unless that auth key includes reset-device capability; \
-                 older openkms builds omitted it, so the reset command was rejected silently by the firmware. \
-                 Factory-reset the module with YubiHSM Manager or `yubihsm-auth`, then run `openkms setup` again on an up-to-date openkms binary.",
-                ids::PROVISIONER_AUTH_KEY_ID
-            );
-        }
-        Err(_) => {}
+        drop(stale);
+        bail!(
+            "`reset_device` did not wipe this YubiHSM: provisioner auth key #{} still accepts your mnemonic-derived password. \
+             Sessions opened via provisioner recovery cannot reset unless that auth key includes reset-device capability; \
+             older openkms builds omitted it, so the reset command was rejected silently by the firmware. \
+             Factory-reset the module with YubiHSM Manager or `yubihsm-auth`, then run `openkms setup` again on an up-to-date openkms binary.",
+            ids::PROVISIONER_AUTH_KEY_ID
+        );
     }
     // After a reset the session is invalid. Re-login as the factory default
     // auth key (id 1 / password "password") — this is the only key left.
@@ -853,8 +851,12 @@ async fn run_service(cli: &CliCtx) -> Result<()> {
 async fn ceremony_dispatch(cmd: CeremonyCommand) -> Result<()> {
     match cmd {
         CeremonyCommand::PrintSignerPassword(args) => ceremony_print_signer_password(&args),
-        CeremonyCommand::PrintProvisionerPassword(args) => ceremony_print_provisioner_password(&args),
-        CeremonyCommand::PrintDerivedSigningSecrets(args) => ceremony_print_derived_signing_secrets(&args),
+        CeremonyCommand::PrintProvisionerPassword(args) => {
+            ceremony_print_provisioner_password(&args)
+        }
+        CeremonyCommand::PrintDerivedSigningSecrets(args) => {
+            ceremony_print_derived_signing_secrets(&args)
+        }
     }
 }
 
@@ -899,11 +901,17 @@ fn ceremony_print_derived_signing_secrets(args: &CeremonyDerivedSigningArgs) -> 
 
     if let Some(p) = args.solana_path.as_deref() {
         let sk = derive::derive_ed25519(&seed_arr, p)?;
-        println!("OPENKMS_SOLANA_SIGNER_SEED_B64={}", B64.encode(sk.as_slice()));
+        println!(
+            "OPENKMS_SOLANA_SIGNER_SEED_B64={}",
+            B64.encode(sk.as_slice())
+        );
     }
     if let Some(p) = args.cosmos_path.as_deref() {
         let sk = derive::derive_secp256k1(&seed_arr, p)?;
-        println!("OPENKMS_COSMOS_SIGNER_SCALAR_B64={}", B64.encode(sk.as_slice()));
+        println!(
+            "OPENKMS_COSMOS_SIGNER_SCALAR_B64={}",
+            B64.encode(sk.as_slice())
+        );
     }
     eprintln!(
         "These are recomputed from the mnemonic (not read from the HSM); paths must match `keys provision`."
