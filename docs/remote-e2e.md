@@ -68,7 +68,7 @@ or from the Tailscale action.
 `remote-e2e.yml` reads these **secrets**:
 
 - `TAILSCALE_OAUTH_CLIENT_ID` / `TAILSCALE_OAUTH_CLIENT_SECRET`: [Tailscale OAuth API client](https://tailscale.com/s/oauth-clients) with **`auth_keys`** scope and tags matching the workflow (see **`TAILSCALE_OAUTH_TAGS`** below). This avoids the deprecated **`authkey`** input on `tailscale/github-action`. ([Tailnet Lock](https://tailscale.com/kb/1226/tailnet-lock) deployments may still require a **pre-signed auth key** instead — fork the workflow to pass **`authkey`** per the action README.)
-- `OPENKMS_BASE_URL`: signer URL for **github.com** (after Tailscale): tailnet **`http://…`** / **`https://…`**, or public staging URL. **Not** used as-is when **`ACT=true`** if you set **`OPENKMS_ACT_BASE_URL`** (see below).
+- `OPENKMS_BASE_URL`: signer HTTP base URL reachable **on the tailnet after** the Tailscale step (e.g. **`http://my-pi:8443`**, **`http://100.x.y.z:8443`**). The same secret is used on **github.com** and under **`gh act`** once the job has joined the tailnet.
 - `OPENKMS_SIGNER_TOKEN`: signer bearer token for the staging environment
 - `OPENKMS_REMOTE_E2E_SOLANA_REQUEST_B64`: base64-encoded JSON for **`POST /sign/solana`**
 - `OPENKMS_REMOTE_E2E_COSMOS_REQUEST_B64`: base64-encoded JSON for **`POST /sign/cosmos`**
@@ -80,8 +80,6 @@ Optional **secrets**:
 Optional **variables**:
 
 - `TAILSCALE_OAUTH_TAGS`: comma-separated [ACL tags](https://tailscale.com/kb/1068/tags) for CI nodes (must match your OAuth client), e.g. **`tag:ci`**. If unset, the workflow defaults to **`tag:ci`** — create that tag on the client and allow it in ACLs to reach your signer.
-
-- `OPENKMS_ACT_BASE_URL`: when **`ACT=true`** ([`gh act`](https://nektosact.com/) / **`act`**), the workflow uses this value for **`OPENKMS_BASE_URL`** instead of the **`OPENKMS_BASE_URL`** secret, so you can point at **`http://host.docker.internal:8443`** or **`http://172.17.0.1:8443`** while keeping the secret aimed at your real tailnet **`100.x`** / MagicDNS URL for **github.com**. Add to **`.vars`** with **`--var-file`**. If unset under **`ACT=true`**, the job still uses the secret — a **`100.x`** URL will fail from the act container because Tailscale was skipped.
 
 - `OPENKMS_EXPECT_SOLANA_KEY_LABEL`: if set, the **Solana** job asserts this label
   appears in `GET /keys`
@@ -118,9 +116,33 @@ addresses directly to your home IP.
   **`remote_e2e_smoke.sh`** runs.
 
 On the signer, you still need **`openkms`** (or nginx in front of it) listening on an
-address the **tailnet peer** can reach — often **`0.0.0.0`** on the staging host or
-**`tailscale0`** with **`OPENKMS_LISTEN`** in remote E2E test mode — plus ACLs that
-allow the CI node’s tag or user to the signer’s port.
+address the **tailnet peer** can reach — set **`[server].listen`** to **`0.0.0.0:PORT`**
+on a dedicated staging host, or to the Pi’s **`100.x`** / tailscale interface address,
+or terminate TLS on **nginx** and keep openkms on **`127.0.0.1`** — plus ACLs that allow
+the CI node’s tag or user to the signer’s port.
+
+### Checklist: Pi (or staging host) for remote smoke
+
+1. **Tailscale on the Pi** — Install and log in; note MagicDNS name and **`100.x`**.
+2. **ACLs** — Allow your CI OAuth tag (e.g. **`tag:ci`**) to **`tcp:PORT`** on the Pi
+   (same **`PORT`** as in **`OPENKMS_BASE_URL`**).
+3. **HTTP listen** — Either **`listen = "0.0.0.0:8443"`** (example) in **`config.toml`**
+   so tailnet peers can connect, **or** keep **`127.0.0.1:9443`** and put **nginx** (or
+   similar) on **`443`/`8443`** with **`proxy_pass`** to loopback (see
+   [`deploy/nginx-openkms-remote-e2e.conf.example`](../deploy/nginx-openkms-remote-e2e.conf.example)).
+4. **systemd `IPAddressAllow=`** — Peers from the tailnet are **`100.64.0.0/10`** (and
+   IPv6 ULA if you use it). The stock [`deploy/openkms.service`](../deploy/openkms.service)
+   allows RFC1918 private ranges **but not** **`100.64.0.0/10`**, so **direct** binds to
+   **`0.0.0.0`** still see **dropped** connections from CI unless you add a drop-in
+   **`IPAddressAllow=100.64.0.0/10`** (or use nginx so the peer is **localhost**).
+5. **`yubihsm-connector`** — **`Requires=`** / running; **`[hsm].connector_url`** reachable
+   from the **`openkms`** process.
+6. **Bearer token** — **`/etc/openkms/signer.token`** matches **`OPENKMS_SIGNER_TOKEN`**
+   in GitHub / **`.secrets`**.
+7. **Request fixtures** — Secrets **`OPENKMS_REMOTE_E2E_*_REQUEST_B64`** must match keys
+   and policy on the Pi (generate with **`scripts/generate_remote_e2e_request.sh`**).
+8. **Optional labels** — Repo vars **`OPENKMS_EXPECT_*_KEY_LABEL`** must match **`GET /keys`**
+   if set.
 
 ## Staging deployment: reachability from GitHub-hosted runners
 
@@ -165,19 +187,35 @@ TLS, rate limits). See [`deploy/README.md`](../deploy/README.md).
 
 ### Local `gh act` and common `curl` failures
 
-**Tailscale inside act:** [nektos/act](https://github.com/nektos/act) sets **`ACT=true`**
-in the job environment. **`remote-e2e.yml`** skips the **`tailscale/github-action`** step
-when **`ACT` is `true`**, because **`tailscaled`** often never becomes healthy in the
-ephemeral Docker runner (errors like **`503 Service Unavailable: no backend`** or
-**`tailscaled.sock: no such file or directory`**). On **github.com**, **`ACT`** is unset,
-so Tailscale runs as usual. **`100.x`** or MagicDNS URLs in **`secrets.OPENKMS_BASE_URL`**
-only work on **github.com** after the Tailscale step. For **`gh act`**, set repo variable
-**`OPENKMS_ACT_BASE_URL`** (e.g. in **`.vars`**) to a URL the **Docker** container can reach
-(**`host.docker.internal`**, bridge gateway, or your host LAN IP) — see **`OPENKMS_ACT_BASE_URL`**
-under optional variables above.
+**Same path as GitHub:** `remote-e2e.yml` **always** runs **`tailscale/github-action`**
+before smoke, then **`curl`** uses **`OPENKMS_BASE_URL`** (your Pi on the tailnet). Put
+the same **`TAILSCALE_OAUTH_*`**, **`OPENKMS_BASE_URL`**, and smoke secrets in **`.secrets`**
+(and **`TAILSCALE_OAUTH_TAGS`** / label vars in **`.vars`**) as for Actions.
 
-The smoke step runs **`curl`** against **`OPENKMS_BASE_URL`** from **inside** the act
-container. `gh act` may redact the hostname in logs (`***`); compare with your
+**Set up job fails on `docker pull`:** If you see **`authentication required` / `incorrect username or password`** while pulling **`catthehacker/ubuntu:act-latest`**, that is **Docker registry auth**, not this workflow. Try **`docker pull catthehacker/ubuntu:act-latest`** in a normal shell: fix **`docker login`** (Docker Hub) if you use a paid/registry account, or **`docker logout`** and retry anonymous pulls; clear stale entries in **`~/.docker/config.json`**; on **Docker Desktop** (WSL2), confirm you are logged into the right account or reset credentials in **Settings**.
+
+**Why `gh act` can still fail:** [nektos/act](https://github.com/nektos/act) sets **`ACT=true`**
+and runs steps inside Docker. **`tailscaled`** usually needs **`/dev/net/tun`** and
+**`CAP_NET_ADMIN`**. **Pass narrow Docker options first** if the Tailscale step shows
+**`503 Service Unavailable: no backend`** or **tailscaled doesn’t appear to be running**
+(syntax varies by **`gh act` / `act`** version; see **`act --help`**):
+
+```bash
+gh act -W .github/workflows/remote-e2e.yml -j solana --secret-file .secrets --var-file .vars \
+  --container-options "--cap-add=NET_ADMIN --device /dev/net/tun"
+```
+
+If **`tailscaled` still fails** (some Docker Desktop / WSL setups), fall back to
+**`--privileged`** for local debugging only — broader than the line above.
+
+See [Tailscale’s GitHub Action README](https://github.com/tailscale/github-action). **github.com**
+runners already match what the action expects; **no** workflow YAML change is required there.
+
+The **stable** path for “CI always reaches the Pi the same way” is **`workflow_dispatch` on github.com**;
+use **`gh act`** when you want to exercise the workflow locally and accept Docker/Tailscale tuning.
+
+The smoke step runs **`curl`** against **`OPENKMS_BASE_URL`** from **inside** the job
+environment. `gh act` may redact the hostname in logs (`***`); compare with your
 `.secrets` when debugging.
 
 **`curl: (6) Could not resolve host`** — **`OPENKMS_BASE_URL`** uses a name that
@@ -185,23 +223,19 @@ does not resolve (often **`…example.com`** placeholders from docs). Use a real
 name or a private name your network resolves. See also the warning in
 `scripts/remote_e2e_smoke.sh` when the URL contains `example.*`.
 
-**`curl: (7) Failed to connect … port N`** — DNS worked, but nothing accepted TCP
-from the act container (your log may show **`host.docker.internal:5678`** or another
-host/port):
+**`curl: (7) Failed to connect … port N`** — after Tailscale, DNS worked but nothing
+accepted TCP (timeout or refused):
 
+- **Tailscale did not complete** — check the Tailscale action log, OAuth tags vs ACLs,
+  and **`OPENKMS_TAILSCALE_PING_HOST`** if set (must be reachable from the CI node).
 - **`http://host`** without a port uses **port 80**. If the signer only speaks **HTTPS**,
   use **`https://…`** (port **443** unless you include **`:port`**).
-- **`host.docker.internal`** — on **Docker Desktop** (Windows/macOS) this usually
-  reaches services on the host. On **Linux and WSL2**, the name may appear to resolve
-  but connections still fail until the container gets a proper host mapping. Try
-  passing **`--add-host=host.docker.internal:host-gateway`** into the job container
-  (see [act](https://nektosact.com/) / `gh act` flags such as **`--container-options`**
-  for your version), or point **`OPENKMS_BASE_URL`** at an IP the container can reach
-  (often the Docker bridge gateway **`172.17.0.1`**, or your machine’s LAN IP) with the
-  correct **published** port.
-- Confirm something is **listening** on that host and port from outside the process
-  itself: bind to **`0.0.0.0:PORT`** (not only **`127.0.0.1`**) if you need Docker to
-  connect. Check the service is **running** and no **firewall** blocks the act network.
+- **Pi listen address** — openkms (or nginx) must listen on an interface the tailnet
+  peer can reach (**`0.0.0.0`**, **`tailscale0`**, etc.), not only **`127.0.0.1`**, unless
+  you terminate TLS on the same host and **`proxy_pass`** to localhost (see staging
+  section above).
+- **Firewall** on the Pi or path — ensure the tagged CI node can open the port in
+  **`OPENKMS_BASE_URL`**.
 
 [act usage](https://nektosact.com/usage) has more on container networking.
 
