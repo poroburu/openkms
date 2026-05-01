@@ -181,14 +181,16 @@ struct RestoreArgs {
 }
 
 #[derive(Subcommand, Debug)]
-#[allow(clippy::enum_variant_names)] // clap subcommands; `Print*` matches operator-facing docs
 enum CeremonyCommand {
     /// Print 64 hex chars for `hsm-password` after `setup` (signer auth key #3).
-    PrintSignerPassword(CeremonyMnemonicArgs),
+    #[command(name = "print-signer-password")]
+    SignerPassword(CeremonyMnemonicArgs),
     /// Print 64 hex chars for the provisioner auth key #2 (key management: generate / export / import).
-    PrintProvisionerPassword(CeremonyMnemonicArgs),
+    #[command(name = "print-provisioner-password")]
+    ProvisionerPassword(CeremonyMnemonicArgs),
     /// Print base64 env lines for `generate_remote_e2e_request` (same mnemonic + paths as `keys provision`).
-    PrintDerivedSigningSecrets(CeremonyDerivedSigningArgs),
+    #[command(name = "print-derived-signing-secrets")]
+    DerivedSigningSecrets(CeremonyDerivedSigningArgs),
 }
 
 #[derive(clap::Args, Debug)]
@@ -850,11 +852,9 @@ async fn run_service(cli: &CliCtx) -> Result<()> {
 
 async fn ceremony_dispatch(cmd: CeremonyCommand) -> Result<()> {
     match cmd {
-        CeremonyCommand::PrintSignerPassword(args) => ceremony_print_signer_password(&args),
-        CeremonyCommand::PrintProvisionerPassword(args) => {
-            ceremony_print_provisioner_password(&args)
-        }
-        CeremonyCommand::PrintDerivedSigningSecrets(args) => {
+        CeremonyCommand::SignerPassword(args) => ceremony_print_signer_password(&args),
+        CeremonyCommand::ProvisionerPassword(args) => ceremony_print_provisioner_password(&args),
+        CeremonyCommand::DerivedSigningSecrets(args) => {
             ceremony_print_derived_signing_secrets(&args)
         }
     }
