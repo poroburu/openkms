@@ -5,6 +5,8 @@ ACTION!="add|change", GOTO="yubihsm_end"
 SUBSYSTEM!="usb", GOTO="yubihsm_end"
 
 # Vendor/product id for the YubiHSM 2.
-ATTRS{idVendor}=="1050", ATTRS{idProduct}=="0030", MODE="0660", GROUP="plugdev"
+# OWNER lets `User=yubihsm-connector` open the device without relying only on
+# supplementary `plugdev` (helps on some Pi/USB stacks).
+ATTRS{idVendor}=="1050", ATTRS{idProduct}=="0030", MODE="0660", OWNER="yubihsm-connector", GROUP="plugdev"
 
 LABEL="yubihsm_end"

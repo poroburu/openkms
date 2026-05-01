@@ -42,9 +42,11 @@ AmbientCapabilities=
 # --- Device access ---------------------------------------------------
 # The connector needs read/write access to the USB HSM device node.
 # `SupplementaryGroups=plugdev` plus a udev rule (see deploy/README.md)
-# is the conventional way to grant this.
+# is the conventional way to grant filesystem permissions.
+# systemd cgroup ACL: `/dev/bus/usb` is a directory, not a device node — use the
+# kernel char group for USB devices (major 189, `usb_device` in /proc/devices).
 SupplementaryGroups=plugdev
-DeviceAllow=/dev/bus/usb rw
+DeviceAllow=char-usb_device rw
 
 [Install]
 WantedBy=multi-user.target
