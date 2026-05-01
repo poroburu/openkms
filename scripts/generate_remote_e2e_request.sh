@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build JSON for remote smoke signing; print base64 for OPENKMS_REMOTE_E2E_*_REQUEST_B64 secrets
+# Build JSON for remote smoke signing; print base64 for OPENKMS_REMOTE_E2E_*_REQUEST_B64 secrets.
+# Operator wrapper (mnemonic → ./.tmp/remote-keys): scripts/generate_e2e_request.sh.
 # (base64 of the JSON, no trailing newline). Subcommand `both`: two stdout lines
 # (Solana, Cosmos); stderr labels each with OPENKMS_REMOTE_E2E_*_REQUEST_B64.
 # Preloads ./.secrets then ./.vars (or OPENKMS_*_FILE).
