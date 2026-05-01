@@ -11,6 +11,8 @@ attached to.
   exposes the HSM over `http://127.0.0.1:12345`.
 - `99-yubihsm.rules` — udev rule that gives `plugdev` access to the HSM USB
   device node (install into `/etc/udev/rules.d/`).
+- `nginx-openkms-remote-e2e.conf.example` — optional TLS reverse proxy in front
+  of loopback-bound openkms (GitHub Actions `remote-e2e.yml`).
 - `../examples/*` — placeholder config and secret file templates for first
   bootstrapping. Replace the placeholder contents before starting the service.
 
@@ -65,3 +67,19 @@ Review the unit files and tune the `IPAddressAllow=` entries and
 
 For remote smoke tests against a staging deployment, see
 [`../docs/remote-e2e.md`](../docs/remote-e2e.md).
+
+### GitHub Actions `remote-e2e.yml`
+
+Hosted runners call **`OPENKMS_BASE_URL`** from the public internet. The default
+**`openkms.service`** IP sandbox allows localhost and RFC1918/ULA peers only, so
+**direct** exposure on **`0.0.0.0`** without a proxy will reject GitHub’s source
+IPs.
+
+- **Preferred:** TLS reverse proxy → **`http://127.0.0.1:<port>`**, openkms
+  **`listen`** stays loopback. Example fragment:
+  [`nginx-openkms-remote-e2e.conf.example`](nginx-openkms-remote-e2e.conf.example).
+- **Direct exposure:** merge CIDRs from **`https://api.github.com/meta`** (`actions`)
+  into **`IPAddressAllow=`**, e.g. with
+  [`../scripts/gen_github_actions_systemd_dropin.sh`](../scripts/gen_github_actions_systemd_dropin.sh).
+- **Dedicated staging only:** a drop-in can clear **`IPAddressDeny=`** / allow all
+  peers; do not use that pattern on a general homelab node.

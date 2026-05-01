@@ -71,6 +71,11 @@ PrivateUsers=true
 # openKMS only talks to the yubihsm-connector on localhost and listens on
 # an address chosen in config. Restrict address families to keep the
 # attack surface small.
+#
+# IPAddress* applies to peers for this unit. GitHub-hosted Actions runners
+# (remote-e2e.yml) use public IPs — not covered below. Prefer TLS reverse
+# proxy to 127.0.0.1:port, or merge allows from api.github.com meta "actions",
+# or use a staging-only drop-in; see docs/remote-e2e.md.
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 IPAddressDeny=any
 IPAddressAllow=localhost

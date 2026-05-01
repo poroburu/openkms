@@ -1,0 +1,32 @@
+# Example: terminate TLS on nginx and proxy to openkms on loopback.
+# GitHub-hosted runners then hit https://your-host/... while openkms keeps
+# listen = "127.0.0.1:9443" and deploy/openkms.service IP filters unchanged
+# (proxied connections appear from 127.0.0.1).
+#
+# Copy fragments into /etc/nginx/sites-available/ and enable the server block.
+# Obtain certificates with certbot or your CA before going to production.
+
+upstream openkms_signer {
+    server 127.0.0.1:9443;
+    keepalive 8;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name signer-staging.example.com;
+
+    # ssl_certificate     /etc/letsencrypt/live/signer-staging.example.com/fullchain.pem;
+    # ssl_certificate_key /etc/letsencrypt/live/signer-staging.example.com/privkey.pem;
+
+    client_max_body_size 256k;
+
+    location / {
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Authorization $http_authorization;
+        proxy_pass http://openkms_signer;
+    }
+}
