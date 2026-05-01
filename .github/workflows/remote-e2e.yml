@@ -1,7 +1,13 @@
-# Staging smoke against a real deployment. Requires repository secrets (see
-# docs/remote-e2e.md): OPENKMS_BASE_URL, OPENKMS_SIGNER_TOKEN,
-# OPENKMS_REMOTE_E2E_SOLANA_REQUEST_B64, OPENKMS_REMOTE_E2E_COSMOS_REQUEST_B64.
-# Optional repo vars: OPENKMS_EXPECT_SOLANA_KEY_LABEL, OPENKMS_EXPECT_COSMOS_KEY_LABEL.
+# Staging smoke against a real deployment. Each job joins your tailnet first
+# (`tailscale/github-action`), then runs the same shell entrypoint as operators
+# (`scripts/run_remote_e2e_job.sh`). Set `OPENKMS_BASE_URL` to a URL reachable on
+# the tailnet (e.g. http://signer-hostname:8443). See docs/remote-e2e.md.
+#
+# Secrets: TAILSCALE_AUTHKEY, OPENKMS_BASE_URL, OPENKMS_SIGNER_TOKEN,
+#   OPENKMS_REMOTE_E2E_SOLANA_REQUEST_B64, OPENKMS_REMOTE_E2E_COSMOS_REQUEST_B64
+# Optional repo vars: OPENKMS_EXPECT_SOLANA_KEY_LABEL, OPENKMS_EXPECT_COSMOS_KEY_LABEL
+# Optional secret (waits for tailnet path): OPENKMS_TAILSCALE_PING_HOST — MagicDNS
+# name or 100.x host to `tailscale ping` before smoke (omit if unused)
 #
 # DISABLED for automatic CI: only `workflow_dispatch` until you enable production
 # staging gates. To run on every push to main, add under `on:`:
@@ -10,10 +16,9 @@
 # (and optionally `concurrency:` to cancel in-progress runs). Mock signing smoke
 # for scripts stays in `ci.yml` → job `remote-e2e-job-shell`.
 #
-# Jobs delegate to scripts/run_remote_e2e_job.sh so GitHub, act, and operators
-# share one implementation (avoids drift with copy-pasted bash in YAML).
-# Staging must accept HTTPS (or HTTP) from GitHub-hosted runner IPs — see docs/remote-e2e.md
-# (reverse proxy to loopback + deploy/nginx-openkms-remote-e2e.conf.example).
+# Without Tailscale, curl would originate from GitHub’s public runner IPs — see
+# docs/remote-e2e.md (nginx + deploy/nginx-openkms-remote-e2e.conf.example, or
+# systemd drop-in for api.github.com/meta `actions` CIDRs).
 name: Remote E2E
 
 on:
@@ -33,6 +38,12 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          ping: ${{ secrets.OPENKMS_TAILSCALE_PING_HOST }}
+
       - name: Remote smoke (Solana)
         run: |
           chmod +x ./scripts/run_remote_e2e_job.sh ./scripts/remote_e2e_smoke.sh
@@ -50,6 +61,12 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          ping: ${{ secrets.OPENKMS_TAILSCALE_PING_HOST }}
 
       - name: Remote smoke (Cosmos)
         run: |

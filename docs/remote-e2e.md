@@ -62,15 +62,20 @@ signer deployment failures stay distinct from testnet RPC or fee/nonce issues.
 ## Workflow inputs
 
 In GitHub: **Settings → Secrets and variables → Actions → Secrets** (repository
-scope). Create each name exactly as below; otherwise the “Validate workflow
-configuration” step fails with `missing secret …`.
+scope). Missing values surface as errors from **`scripts/run_remote_e2e_job.sh`**
+or from the Tailscale action.
 
 `remote-e2e.yml` reads these **secrets**:
 
-- `OPENKMS_BASE_URL`: reachable base URL such as `https://signer-staging.example.com`
+- `TAILSCALE_AUTHKEY`: [Tailscale auth key](https://tailscale.com/kb/1085/auth-keys) so each job’s runner joins your tailnet before **`curl`** (ephemeral/reusable keys work well for CI)
+- `OPENKMS_BASE_URL`: signer base URL **reachable from the runner after Tailscale is up** — typically **`http://<MagicDNS-name>:<port>`** or **`http://<100.x>:<port>`** on your tailnet (same string you would use from another tailnet node)
 - `OPENKMS_SIGNER_TOKEN`: signer bearer token for the staging environment
 - `OPENKMS_REMOTE_E2E_SOLANA_REQUEST_B64`: base64-encoded JSON for **`POST /sign/solana`**
 - `OPENKMS_REMOTE_E2E_COSMOS_REQUEST_B64`: base64-encoded JSON for **`POST /sign/cosmos`**
+
+Optional **secrets**:
+
+- `OPENKMS_TAILSCALE_PING_HOST`: hostname or **`100.x`** address to **`tailscale ping`** after join (helps with eventual consistency before smoke; leave unset to skip)
 
 Optional **variables**:
 
@@ -94,10 +99,30 @@ and runs in its **own CI job** under **`ci.yml`** (`cargo test --test remote_e2e
 so the main **`cargo test`** log stays shorter; all Rust jobs share **`rust-cache`**
 with **`shared-key: openkms`** to reuse compiled deps.
 
+## Tailscale path (default in `remote-e2e.yml`)
+
+The workflow runs **`tailscale/github-action@v4`** after checkout so smoke **`curl`**
+traffic goes over your **tailnet**, not from GitHub’s public **`meta` `actions`**
+addresses directly to your home IP.
+
+- **`TAILSCALE_AUTHKEY`** must be allowed by your ACLs to reach the signer (and tags
+  must match if you use tag-based ACLs).
+- **`OPENKMS_BASE_URL`** should use a host/port the **runner can resolve and reach only
+  after** Tailscale is connected (MagicDNS name of the Pi, **`100.x`**, or subnet
+  router target — whatever your tailnet uses).
+- **`OPENKMS_TAILSCALE_PING_HOST`** (optional) should name the same machine or an
+  adjacent tailnet hop so the action waits until **`tailscale ping`** succeeds before
+  **`remote_e2e_smoke.sh`** runs.
+
+On the signer, you still need **`openkms`** (or nginx in front of it) listening on an
+address the **tailnet peer** can reach — often **`0.0.0.0`** on the staging host or
+**`tailscale0`** with **`OPENKMS_LISTEN`** in remote E2E test mode — plus ACLs that
+allow the CI node’s tag or user to the signer’s port.
+
 ## Staging deployment: reachability from GitHub-hosted runners
 
-`remote-e2e.yml` runs on **`ubuntu-latest`**. Each job’s `curl` calls originate from
-**[GitHub’s published Actions IP ranges](https://api.github.com/meta)** (the JSON
+**If you remove the Tailscale step** (or run smoke manually without tailnet), each
+job’s `curl` calls originate from **[GitHub’s published Actions IP ranges](https://api.github.com/meta)** (the JSON
 `actions` array), not from your LAN. Two pieces of the stock homelab layout block
 that path unless you adjust them:
 

@@ -448,10 +448,10 @@ See [`deploy/README.md`](deploy/README.md). Summary:
   HSM USB node so the connector user (and *only* the connector user) can
   speak to it.
 
-GitHub-hosted **remote E2E** (`.github/workflows/remote-e2e.yml`) needs a
-**reachable** `OPENKMS_BASE_URL` from the public internet; the stock unit’s
-**`IPAddressAllow=`** rules block GitHub runner IPs unless you terminate TLS on a
-reverse proxy to **`127.0.0.1`** or extend allows — see
+GitHub-hosted **remote E2E** (`.github/workflows/remote-e2e.yml`) joins **Tailscale**
+first, then uses **`OPENKMS_BASE_URL`** on your tailnet. Without that tailnet hop you
+need a **public** URL and either TLS to **`127.0.0.1`** or **`IPAddressAllow=`** updates
+for GitHub’s runner CIDRs — see
 [`docs/remote-e2e.md`](docs/remote-e2e.md) and [`deploy/README.md`](deploy/README.md).
 
 ## Operations
