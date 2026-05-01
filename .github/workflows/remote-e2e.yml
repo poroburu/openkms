@@ -8,9 +8,7 @@
 #   Optional secret OPENKMS_TAILSCALE_PING_HOST — see comment on Tailscale step.
 # openKMS smoke secrets: OPENKMS_SIGNER_TOKEN,
 #   OPENKMS_REMOTE_E2E_SOLANA_REQUEST_B64, OPENKMS_REMOTE_E2E_COSMOS_REQUEST_B64
-# Secret OPENKMS_BASE_URL — tailnet or public URL for github.com (after Tailscale).
-# Optional repo var OPENKMS_ACT_BASE_URL — when ACT=true (gh act), overrides OPENKMS_BASE_URL
-# so curl can use host.docker.internal / 172.17.0.1 (see docs/remote-e2e.md).
+# Secret OPENKMS_BASE_URL — Pi (or staging) HTTP URL on the tailnet after `tailscale up`.
 # Optional repo vars: OPENKMS_EXPECT_SOLANA_KEY_LABEL, OPENKMS_EXPECT_COSMOS_KEY_LABEL
 #
 # DISABLED for automatic CI: only `workflow_dispatch` until you enable production
@@ -24,9 +22,8 @@
 # docs/remote-e2e.md (nginx + deploy/nginx-openkms-remote-e2e.conf.example, or
 # systemd drop-in for api.github.com/meta `actions` CIDRs).
 #
-# Local `act` / `gh act`: `ACT=true` skips the Tailscale step (tailscaled often fails
-# to become healthy inside the act container). Set repo var OPENKMS_ACT_BASE_URL
-# (e.g. in .vars) to a URL the container can reach, or a 100.x tailnet IP in OPENKMS_BASE_URL will fail.
+# gh act: same Tailscale steps as github.com. If tailscaled fails in act, pass
+# --container-options "--cap-add=NET_ADMIN --device /dev/net/tun" (see docs/remote-e2e.md).
 name: Remote E2E
 
 on:
@@ -37,7 +34,7 @@ jobs:
     name: Remote smoke (Solana)
     runs-on: ubuntu-latest
     env:
-      OPENKMS_BASE_URL: ${{ (env.ACT == 'true' && vars.OPENKMS_ACT_BASE_URL) || secrets.OPENKMS_BASE_URL }}
+      OPENKMS_BASE_URL: ${{ secrets.OPENKMS_BASE_URL }}
       OPENKMS_SIGNER_TOKEN: ${{ secrets.OPENKMS_SIGNER_TOKEN }}
       OPENKMS_SIGN_REQUEST_B64: ${{ secrets.OPENKMS_REMOTE_E2E_SOLANA_REQUEST_B64 }}
       OPENKMS_EXPECT_KEY_LABEL: ${{ vars.OPENKMS_EXPECT_SOLANA_KEY_LABEL }}
@@ -50,7 +47,6 @@ jobs:
       # host (MagicDNS name, e.g. my-pi, or a 100.x tailnet IP) until it succeeds — same
       # machine as OPENKMS_BASE_URL is fine. Leave secret unset to skip waiting.
       - name: Tailscale
-        if: ${{ env.ACT != 'true' }}
         uses: tailscale/github-action@v4
         with:
           oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
@@ -67,7 +63,7 @@ jobs:
     name: Remote smoke (Cosmos)
     runs-on: ubuntu-latest
     env:
-      OPENKMS_BASE_URL: ${{ (env.ACT == 'true' && vars.OPENKMS_ACT_BASE_URL) || secrets.OPENKMS_BASE_URL }}
+      OPENKMS_BASE_URL: ${{ secrets.OPENKMS_BASE_URL }}
       OPENKMS_SIGNER_TOKEN: ${{ secrets.OPENKMS_SIGNER_TOKEN }}
       OPENKMS_SIGN_REQUEST_B64: ${{ secrets.OPENKMS_REMOTE_E2E_COSMOS_REQUEST_B64 }}
       OPENKMS_EXPECT_KEY_LABEL: ${{ vars.OPENKMS_EXPECT_COSMOS_KEY_LABEL }}
@@ -78,7 +74,6 @@ jobs:
 
       # Same Tailscale + optional ping as Solana job (separate runner).
       - name: Tailscale
-        if: ${{ env.ACT != 'true' }}
         uses: tailscale/github-action@v4
         with:
           oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
