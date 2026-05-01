@@ -1,3 +1,7 @@
+# Fast repo checks. `lint` → `test` uses `needs:` so the test runner restores rust-cache
+# saved by lint (`shared-key: openkms`). `remote-e2e-job-shell` has no `needs:` so
+# `act -j remote-e2e-job-shell` (and similar) does not pull lint/test; it still shares
+# the same cache key with other jobs across workflow runs on GitHub.
 name: Repo Checks
 
 on:
@@ -9,10 +13,16 @@ on:
       - "src/**"
       - "tests/**"
       - "examples/**"
+      - "scripts/run_remote_e2e_job.sh"
+      - "scripts/remote_e2e_smoke.sh"
   workflow_dispatch:
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  fmt:
+  lint:
+    name: Format + clippy
     runs-on: ubuntu-latest
 
     steps:
@@ -22,35 +32,23 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt
+          components: rustfmt, clippy
 
       - name: Cache cargo artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9.1
+        with:
+          shared-key: openkms
 
       - name: Check formatting
         run: cargo fmt --check
-
-  clippy:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-
-      - name: Cache cargo artifacts
-        uses: Swatinem/rust-cache@v2
 
       - name: Lint
         run: cargo clippy --all-targets -- -D warnings
 
   test:
+    name: Unit + integration tests
     runs-on: ubuntu-latest
-
+    needs: lint
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -60,6 +58,27 @@ jobs:
 
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: openkms
 
-      - name: Run tests
+      - name: Run tests (ignored remote shell test runs in its own job)
         run: cargo test --all-targets
+
+  remote-e2e-job-shell:
+    name: Remote E2E job script (mock signer)
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: openkms
+
+      - name: run_remote_e2e_job.sh against in-process mock HTTP signer
+        run: cargo test --test remote_e2e_job_shell -- --ignored --nocapture
