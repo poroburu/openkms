@@ -13,8 +13,31 @@ attached to.
   device node (install into `/etc/udev/rules.d/`).
 - `nginx-openkms-remote-e2e.conf.example` — optional TLS reverse proxy in front
   of loopback-bound openkms (GitHub Actions `remote-e2e.yml`).
+- `config.remote-e2e.toml` — **`listen = "0.0.0.0:8443"`** staging template for
+  Tailscale-reachable smoke tests ([`../docs/remote-e2e.md`](../docs/remote-e2e.md)).
+- `openkms.service.d/tailnet.conf` — systemd drop-in **`IPAddressAllow=100.64.0.0/10`**
+  so Tailscale peers are not blocked by the stock unit (RFC1918-only allows).
+- `install-remote-e2e-host.sh` — installs connector + openkms + tokens + drop-in
+  (see below).
+- `github-remote-e2e.env.example` — checklist of GitHub Actions secrets to set.
 - `../examples/*` — placeholder config and secret file templates for first
   bootstrapping. Replace the placeholder contents before starting the service.
+
+## Remote E2E host (GitHub `workflow_dispatch`)
+
+From the repo root on the Pi (or any staging Linux host with a YubiHSM2):
+
+```bash
+sudo ./deploy/install-remote-e2e-host.sh
+```
+
+This installs **`yubihsm-connector`**, builds **`mock-release`** if needed, lays
+out **`/etc/openkms`**, enables **`openkms.service.d/tailnet.conf`**, and prints
+**`OPENKMS_BASE_URL`** / **`OPENKMS_SIGNER_TOKEN`** for GitHub. The service may
+stay failed until you finish **`openkms setup`**, provision keys at **`0x0100`**
+and **`0x0101`**, update cosmos **`allowed_recipients`**, and regenerate smoke
+request secrets — follow the script’s “Next steps” and
+[`../docs/remote-e2e.md`](../docs/remote-e2e.md).
 
 ## First-time install
 
@@ -28,8 +51,13 @@ sudo install -d -m 0750 -o openkms -g openkms /etc/openkms
 sudo install -d -m 0700 -o openkms -g openkms /var/lib/openkms
 sudo install -d -m 0700 -o openkms -g openkms /var/log/openkms
 
-# 3) Binary.
-sudo install -m 0755 target/aarch64-unknown-linux-gnu/release/openkms /usr/local/bin/openkms
+# 3) Binary. Use `mock-release` for an optimized build that still supports `--mock`
+#    (see `[profile.mock-release]` in ../Cargo.toml). Plain `--release` cannot.
+cargo build --profile mock-release
+sudo install -m 0755 target/mock-release/openkms /usr/local/bin/openkms
+# Cross-compile from another machine:
+#   cargo build --profile mock-release --target aarch64-unknown-linux-gnu
+# sudo install -m 0755 target/aarch64-unknown-linux-gnu/mock-release/openkms /usr/local/bin/openkms
 
 # 4) Configs (all 0600).
 sudo install -m 0600 -o openkms -g openkms examples/config.toml    /etc/openkms/config.toml
@@ -70,10 +98,13 @@ For remote smoke tests against a staging deployment, see
 
 ### GitHub Actions `remote-e2e.yml`
 
-Hosted runners call **`OPENKMS_BASE_URL`** from the public internet. The default
-**`openkms.service`** IP sandbox allows localhost and RFC1918/ULA peers only, so
-**direct** exposure on **`0.0.0.0`** without a proxy will reject GitHub’s source
-IPs.
+**Tailscale (default workflow):** CI joins your tailnet; traffic is from Tailscale
+**`100.64.0.0/10`**. Use **`openkms.service.d/tailnet.conf`** or equivalent so the
+unit allows CGNAT peers — **`install-remote-e2e-host.sh`** installs this drop-in.
+
+**Without Tailscale:** hosted runners use **public** IPs. The default
+**`openkms.service`** sandbox allows localhost and RFC1918/ULA only, so **direct**
+**`0.0.0.0`** binds reject GitHub unless you add **`actions`** CIDRs or a proxy:
 
 - **Preferred:** TLS reverse proxy → **`http://127.0.0.1:<port>`**, openkms
   **`listen`** stays loopback. Example fragment:
