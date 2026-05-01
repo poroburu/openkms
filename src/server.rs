@@ -16,7 +16,15 @@
 //!   * The replay cache is keyed on sha256(signing_digest). See `replay.rs`
 //!     for why caching is safe.
 
-use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Instant};
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Instant,
+};
 
 use anyhow::{Context, Result, anyhow};
 use axum::{
@@ -59,6 +67,10 @@ pub struct AppState {
     pub signer_token: Arc<String>,
     pub admin_token: Arc<String>,
     pub config: Arc<Config>,
+    /// After the first `/health` response is produced, further `/health` calls include `hsm_up`
+    /// as a boolean. The first response uses JSON `null` so clients can distinguish "no probe
+    /// has been reported yet" from `false` (probe ran and HSM was down).
+    pub health_prior_response_sent: Arc<AtomicBool>,
 }
 
 impl AppState {
@@ -128,6 +140,7 @@ impl AppState {
             signer_token: Arc::new(signer_token),
             admin_token: Arc::new(admin_token),
             config: Arc::new(config),
+            health_prior_response_sent: Arc::new(AtomicBool::new(false)),
         })
     }
 }
@@ -183,15 +196,20 @@ pub async fn serve(state: AppState) -> Result<()> {
 #[derive(Serialize)]
 struct HealthBody {
     status: &'static str,
-    hsm_up: bool,
+    /// `null` on the first `/health` response only (the HSM is still pinged); thereafter `true`/`false`.
+    hsm_up: Option<bool>,
 }
 
 async fn health(State(state): State<AppState>) -> impl IntoResponse {
+    let prior = state
+        .health_prior_response_sent
+        .swap(true, Ordering::SeqCst);
     let up = state.hsm.ping().await;
     state.metrics.hsm_up().set(if up { 1 } else { 0 });
+    let hsm_up = if prior { Some(up) } else { None };
     Json(HealthBody {
         status: "ok",
-        hsm_up: up,
+        hsm_up,
     })
 }
 
@@ -591,6 +609,7 @@ mod tests {
             .unwrap();
         let app = router(state);
         let resp = app
+            .clone()
             .oneshot(
                 Request::builder()
                     .uri("/health")
@@ -605,7 +624,22 @@ mod tests {
             .unwrap();
         let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(v["status"], "ok");
-        assert_eq!(v["hsm_up"], true);
+        assert_eq!(v["hsm_up"], serde_json::Value::Null);
+
+        let resp2 = app
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let bytes2 = axum::body::to_bytes(resp2.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let v2: serde_json::Value = serde_json::from_slice(&bytes2).unwrap();
+        assert_eq!(v2["hsm_up"], true);
     }
 
     #[tokio::test]
