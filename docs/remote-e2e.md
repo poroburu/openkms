@@ -94,6 +94,47 @@ and runs in its **own CI job** under **`ci.yml`** (`cargo test --test remote_e2e
 so the main **`cargo test`** log stays shorter; all Rust jobs share **`rust-cache`**
 with **`shared-key: openkms`** to reuse compiled deps.
 
+## Staging deployment: reachability from GitHub-hosted runners
+
+`remote-e2e.yml` runs on **`ubuntu-latest`**. Each job’s `curl` calls originate from
+**[GitHub’s published Actions IP ranges](https://api.github.com/meta)** (the JSON
+`actions` array), not from your LAN. Two pieces of the stock homelab layout block
+that path unless you adjust them:
+
+1. **`[server].listen`** in `/etc/openkms/config.toml` — the checked-in
+   [`examples/config.toml`](../examples/config.toml) uses **`127.0.0.1`**, which
+   only accepts connections **on the signer host itself**. Nothing on the public
+   internet (or on another machine) can reach it.
+2. **`deploy/openkms.service`** — **`IPAddressDeny=any`** plus **`IPAddressAllow=`**
+   for localhost and private-space prefixes. Traffic whose **peer** is a GitHub
+   runner public address is **not** in that allowlist, so the service cgroup drops
+   the connection even if you bind **`0.0.0.0`**.
+
+**Recommended (keeps systemd hardening):** put **TLS** on a reverse proxy
+(nginx, Caddy, Traefik, cloud LB) that listens on **`443`** (or another public
+port), and **`proxy_pass`** to **`http://127.0.0.1:9443`**. Leave openkms on
+**`listen = "127.0.0.1:9443"`**. From openkms’s perspective, every request is from
+**localhost**, which matches the unit’s **`IPAddressAllow=`** rules. Set
+**`OPENKMS_BASE_URL`** in GitHub secrets to **`https://your-staging-host`** (see
+[`deploy/nginx-openkms-remote-e2e.conf.example`](../deploy/nginx-openkms-remote-e2e.conf.example)).
+
+**Alternative (openkms bound on `0.0.0.0` without a local proxy):** extend the
+unit’s allowlist with GitHub’s **`actions`** CIDRs (they change over time; refresh
+when runs start failing with timeouts):
+
+```bash
+sudo install -d /etc/systemd/system/openkms.service.d
+./scripts/gen_github_actions_systemd_dropin.sh \
+  -o /etc/systemd/system/openkms.service.d/github-actions.conf
+sudo systemctl daemon-reload
+sudo systemctl restart openkms
+```
+
+**Staging-only escape hatch:** a drop-in that clears **`IPAddressDeny=`** /
+**`IPAddressAllow=`** exposes the process network namespace without the unit’s IP
+sandbox — only use on a **dedicated** staging host, with other controls (firewall,
+TLS, rate limits). See [`deploy/README.md`](../deploy/README.md).
+
 ### Local `gh act` and common `curl` failures
 
 The smoke step runs **`curl`** against **`OPENKMS_BASE_URL`** from **inside** the act
