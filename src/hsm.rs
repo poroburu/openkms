@@ -267,7 +267,33 @@ pub mod ids {
     pub const CEREMONY_AUTH_KEY_ID: u16 = 1;
     pub const PROVISIONER_AUTH_KEY_ID: u16 = 2;
     pub const SIGNER_AUTH_KEY_ID: u16 = 3;
-    pub const WRAP_KEY_ID: u16 = 1;
+    /// Object id for the AES wrap key (must not collide with [`CEREMONY_AUTH_KEY_ID`]).
+    pub const WRAP_KEY_ID: u16 = 4;
+}
+
+/// Non-delegated capabilities for the `openkms-provisioner` authentication key
+/// installed during the `openkms setup` command (while authenticated as the
+/// factory default auth key, or when re-provisioning after a full device reset).
+///
+/// Must include [`Capability::RESET_DEVICE`]: when setup reconnects using
+/// provisioner recovery (slot 1 empty, auth key #2 present), this session must
+/// be allowed to run [`yubihsm::Client::reset_device`]. The upstream `yubihsm`
+/// crate logs send failures at debug level only, so missing this permission
+/// surfaces as “auth key not found” for slot 1 after an apparent reset.
+///
+/// Must include [`Capability::GENERATE_ASYMMETRIC_KEY`] for [`generate_asymmetric_key`]
+/// (`keys generate`); [`Capability::PUT_ASYMMETRIC_KEY`] alone covers only import (`keys provision`).
+pub fn provisioner_auth_capabilities_setup() -> yubihsm::Capability {
+    use yubihsm::Capability as C;
+    C::GENERATE_ASYMMETRIC_KEY
+        | C::PUT_ASYMMETRIC_KEY
+        | C::IMPORT_WRAPPED
+        | C::EXPORT_WRAPPED
+        | C::DELETE_ASYMMETRIC_KEY
+        | C::PUT_AUTHENTICATION_KEY
+        | C::DELETE_AUTHENTICATION_KEY
+        | C::PUT_WRAP_KEY
+        | C::RESET_DEVICE
 }
 
 #[cfg(test)]
@@ -280,6 +306,19 @@ mod tests {
         assert!(hsm.ping().await, "mockhsm should ping");
         let r = hsm.get_pseudo_random(16).await.expect("pseudo random");
         assert_eq!(r.len(), 16);
+    }
+
+    #[test]
+    fn provisioner_setup_capabilities_include_reset_and_generate() {
+        let c = provisioner_auth_capabilities_setup();
+        assert!(
+            c.contains(yubihsm::Capability::RESET_DEVICE),
+            "provisioner must be able to factory-reset when setup uses auth #2 recovery"
+        );
+        assert!(
+            c.contains(yubihsm::Capability::GENERATE_ASYMMETRIC_KEY),
+            "provisioner must run generate_asymmetric_key for keys generate"
+        );
     }
 
     #[test]

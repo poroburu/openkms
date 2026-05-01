@@ -10,10 +10,11 @@
 //!     etc.) — cheap parse-check so typos surface at service boot rather
 //!     than at first sign.
 
-use std::{collections::HashSet, fs, path::PathBuf};
+use std::{collections::HashSet, fs, path::{Path, PathBuf}};
 
 use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroizing;
 
 use crate::chain::Chain;
 
@@ -176,6 +177,27 @@ impl Config {
         let s = fs::read_to_string(path)
             .with_context(|| format!("failed to read secret file {path:?}"))?;
         Ok(s.trim_end_matches(['\n', '\r', ' ', '\t']).to_string())
+    }
+
+    /// Same permission rules as [`read_secret_file`], but returns raw password
+    /// **bytes** for the YubiHSM login:
+    ///
+    /// - If the trimmed contents are **64 ASCII hex digits**, decode to 32 bytes
+    ///   (same encoding as `openkms ceremony print-signer-password` after setup).
+    /// - Otherwise use UTF-8 bytes of the trimmed string (factory default `password`,
+    ///   operator-chosen text passwords).
+    pub fn read_hsm_password_file(path: &Path) -> Result<Zeroizing<Vec<u8>>> {
+        enforce_mode_0600(path)?;
+        let s = fs::read_to_string(path)
+            .with_context(|| format!("failed to read HSM password file {path:?}"))?;
+        let t = s.trim_matches(['\n', '\r', ' ', '\t']);
+        if t.len() == 64 && t.chars().all(|c| c.is_ascii_hexdigit()) {
+            let raw =
+                hex::decode(t).context("invalid hex in HSM password file (expected 64 hex)")?;
+            debug_assert_eq!(raw.len(), 32);
+            return Ok(Zeroizing::new(raw));
+        }
+        Ok(Zeroizing::new(t.as_bytes().to_vec()))
     }
 
     pub fn validate(&self) -> Result<()> {
