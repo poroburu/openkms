@@ -1,7 +1,6 @@
-# Fast repo checks. `lint` → `test` uses `needs:` so the test runner restores rust-cache
-# saved by lint (`shared-key: openkms`). `remote-e2e-job-shell` has no `needs:` so
-# `act -j remote-e2e-job-shell` (and similar) does not pull lint/test; it still shares
-# the same cache key with other jobs across workflow runs on GitHub.
+# Fast repo checks. `lint` → `test` → `remote-e2e-job-shell` chain reuses rust-cache
+# via shared-key `openkms`. To exercise only the ignored shell test locally, run:
+#   cargo test --test remote_e2e_job_shell -- --ignored --nocapture
 name: Repo Checks
 
 on:
