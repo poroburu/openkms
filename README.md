@@ -40,7 +40,12 @@ The generated HTTP API spec is [`openapi/openkms.v1.json`](openapi/openkms.v1.js
 
 ## Quick Start
 
+Copy this as one mock-HSM script, then adjust labels, object IDs, and paths
+before using it against real hardware.
+
 ```bash
+set -euo pipefail
+
 cargo build --profile mock-release
 ./target/mock-release/openkms --mock new-mnemonic > /secure/usb/mnemonic.txt
 ./target/mock-release/openkms setup --mnemonic-file /secure/usb/mnemonic.txt

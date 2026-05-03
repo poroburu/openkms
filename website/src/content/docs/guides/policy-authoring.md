@@ -3,6 +3,8 @@ title: Policy Authoring
 description: How per-key signing policy is evaluated.
 ---
 
+**Docs path:** Operate / Policy Authoring
+
 Every `[[keys]]` entry must include a `[keys.policy]` block. Policy evaluation
 is fail-closed and runs before the HSM signs.
 

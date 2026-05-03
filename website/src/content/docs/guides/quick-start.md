@@ -3,6 +3,8 @@ title: Quick Start
 description: Build openKMS, create the ceremony mnemonic, provision a key, and run the signer.
 ---
 
+**Docs path:** Start / Quick Start
+
 Build an optimized binary that still supports the in-process mock HSM:
 
 ```bash
@@ -42,6 +44,27 @@ Back up every signing key to a wrap-encrypted blob:
 Run the service:
 
 ```bash
+./target/mock-release/openkms run
+```
+
+## Copy As One Script
+
+For a mock-HSM dry run, copy this whole block and adjust labels, object IDs, and
+paths before using it against real hardware.
+
+```bash
+set -euo pipefail
+
+cargo build --profile mock-release
+./target/mock-release/openkms --mock new-mnemonic > /secure/usb/mnemonic.txt
+./target/mock-release/openkms setup --mnemonic-file /secure/usb/mnemonic.txt
+./target/mock-release/openkms keys provision \
+  --label cosmos-hub-0 \
+  --chain cosmos \
+  --object-id 0x0100 \
+  --path "m/44'/118'/0'/0/0" \
+  --mnemonic-file /secure/usb/mnemonic.txt
+./target/mock-release/openkms backup --out /secure/usb/openkms-backup.json
 ./target/mock-release/openkms run
 ```
 

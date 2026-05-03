@@ -3,6 +3,8 @@ title: Overview
 description: What openKMS is and the guarantees it is designed to provide.
 ---
 
+**Docs path:** Start / Overview
+
 openKMS is a YubiHSM2-backed transaction signer for Cosmos and Solana. It is
 designed for a small operator setup, such as a Raspberry Pi signing for an
 automated trading strategy, where the strategy can request signatures but
@@ -32,8 +34,8 @@ Openclaw strategy
 
 ## Documentation Map
 
-- [Quick Start](./guides/quick-start.md) covers local build, ceremony, key provisioning, backup, and service start.
-- [Security Model](./concepts/security-model.md) explains what the HSM does and does not protect.
-- [Configuration](./guides/configuration.md) describes the canonical TOML shape.
-- [HTTP API](./reference/http-api.md) documents the public routes and links to generated OpenAPI.
-- [Deployment](./operations/deployment.md) points at the checked-in systemd and host hardening runbook.
+- [Quick Start](/openkms/guides/quick-start/) covers local build, ceremony, key provisioning, backup, and service start.
+- [Security Model](/openkms/concepts/security-model/) explains what the HSM does and does not protect.
+- [Configuration](/openkms/guides/configuration/) describes the canonical TOML shape.
+- [HTTP API](/openkms/reference/http-api/) documents the public routes and links to generated OpenAPI.
+- [Deployment](/openkms/operations/deployment/) points at the checked-in systemd and host hardening runbook.

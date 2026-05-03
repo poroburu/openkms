@@ -3,6 +3,8 @@ title: Configuration
 description: Configure server, HSM, audit, and per-key policy settings.
 ---
 
+**Docs path:** Operate / Configuration
+
 `config.toml` normally lives at `/etc/openkms/config.toml`. The canonical
 example in the repository is
 [`examples/config.toml`](https://github.com/poroburu/openkms/blob/main/examples/config.toml);

@@ -3,6 +3,8 @@ title: Deployment
 description: Systemd deployment, host hardening, and remote smoke-test setup.
 ---
 
+**Docs path:** Operate / Deployment
+
 The deployment assets stay in the repository root so operators and workflows can
 reference stable paths:
 

@@ -3,6 +3,8 @@ title: Openclaw Integration
 description: How trading agents should use openKMS as a signing boundary.
 ---
 
+**Docs path:** Operate / Openclaw Integration
+
 Openclaw is the target consumer: an autonomous trading agent that constructs
 transactions and asks openKMS for signatures. openKMS never broadcasts. It
 returns signatures that the agent combines with the transaction body and submits

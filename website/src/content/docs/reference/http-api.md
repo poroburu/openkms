@@ -3,12 +3,19 @@ title: HTTP API
 description: Public HTTP routes and the generated OpenAPI source of truth.
 ---
 
+**Docs path:** Reference / HTTP API
+
 All JSON endpoints use bearer-token authentication where noted. Signing routes
 use the token in `signer_token_file`; admin routes use `admin_token_file`.
 
 The machine-readable API source of truth is the committed
 [`openapi/openkms.v1.json`](https://github.com/poroburu/openkms/blob/main/openapi/openkms.v1.json)
 spec. CI regenerates it from Rust code and fails when it drifts.
+
+Direct artifact links:
+
+- [OpenAPI JSON](https://github.com/poroburu/openkms/blob/main/openapi/openkms.v1.json)
+- [OpenAPI generator](https://github.com/poroburu/openkms/blob/main/src/openapi.rs)
 
 ## Routes
 

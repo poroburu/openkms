@@ -3,6 +3,8 @@ title: Backup And Restore
 description: Recover signing keys using the deterministic wrap key and ceremony mnemonic.
 ---
 
+**Docs path:** Operate / Backup And Restore
+
 Backups are wrap-encrypted under the deterministic wrap key derived during the
 ceremony. Store the backup blob next to the ceremony mnemonic. An attacker with
 the backup but not the mnemonic cannot decrypt the wrapped signing keys.

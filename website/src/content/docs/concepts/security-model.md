@@ -3,6 +3,8 @@ title: Security Model
 description: What the HSM protects, what still depends on the host, and how recovery works.
 ---
 
+**Docs path:** Start / Security Model
+
 openKMS speaks plain HTTP. Keep it on loopback, behind an SSH tunnel, or behind
 a reverse proxy or load balancer that terminates TLS before wider exposure.
 

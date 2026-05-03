@@ -3,6 +3,8 @@ title: Architecture
 description: How the signer, policy engine, HSM wrapper, audit log, metrics, and replay cache fit together.
 ---
 
+**Docs path:** Reference / Architecture
+
 openKMS is intentionally small. The HTTP server wires chain-specific decoding
 to shared security and observability layers.
 

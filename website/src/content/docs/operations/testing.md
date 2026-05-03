@@ -3,6 +3,8 @@ title: Testing And Automation
 description: Local test commands, CI lanes, and live smoke-test runbooks.
 ---
 
+**Docs path:** Operate / Testing And Automation
+
 Run the default test suite without hardware:
 
 ```bash
