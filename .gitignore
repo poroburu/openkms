@@ -18,6 +18,7 @@ audit.log.*
 counters.json
 killswitch.json
 .secrets
+.vars
 
 # Tmp / caches
 *.tmp
