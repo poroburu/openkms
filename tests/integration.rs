@@ -66,6 +66,8 @@ fn solana_key(label: &str, object_id: u16) -> KeyDef {
         default_hrp: None,
         policy: KeyPolicy {
             enabled: true,
+            max_signs_per_minute: Some(30),
+            daily_cap_lamports: Some("1000000".into()),
             allowed_programs: vec![AllowedProgram {
                 id: system_program_id(),
                 comment: Some("system transfer smoke test".into()),
@@ -246,6 +248,28 @@ async fn signs_and_honors_admin_disable_over_real_http() {
     let (base_url, server_handle) = spawn_server(cfg, hsm, SIGNER_TOKEN, ADMIN_TOKEN).await;
     let client = Client::new();
 
+    let unauth_policy = client
+        .get(format!("{base_url}/policy/{SOLANA_LABEL}"))
+        .send()
+        .await
+        .expect("unauth policy request");
+    assert_eq!(unauth_policy.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+    let policy_before: serde_json::Value = client
+        .get(format!("{base_url}/policy/{SOLANA_LABEL}"))
+        .bearer_auth(SIGNER_TOKEN)
+        .send()
+        .await
+        .expect("policy request")
+        .error_for_status()
+        .expect("policy status")
+        .json()
+        .await
+        .expect("policy body");
+    assert_eq!(policy_before["label"], SOLANA_LABEL);
+    assert_eq!(policy_before["effective_enabled"], true);
+    assert_eq!(policy_before["policy"]["max_signs_per_minute"], 30);
+
     let message = build_transfer_message(payer, 1_000);
     let sign_resp: serde_json::Value = client
         .post(format!("{base_url}/sign/solana"))
@@ -271,6 +295,23 @@ async fn signs_and_honors_admin_disable_over_real_http() {
     verifying_key
         .verify(&message, &sig)
         .expect("signature verifies");
+
+    let policy_after: serde_json::Value = client
+        .get(format!("{base_url}/policy/{SOLANA_LABEL}"))
+        .bearer_auth(SIGNER_TOKEN)
+        .send()
+        .await
+        .expect("policy request after sign")
+        .error_for_status()
+        .expect("policy after status")
+        .json()
+        .await
+        .expect("policy after body");
+    assert_eq!(
+        policy_after["runtime"]["sign_counts"]["per_minute"]["used"],
+        1
+    );
+    assert_eq!(policy_after["runtime"]["daily_spend"][0]["spent"], "1000");
 
     let keys: serde_json::Value = client
         .get(format!("{base_url}/keys"))
@@ -310,6 +351,83 @@ async fn signs_and_honors_admin_disable_over_real_http() {
         .await
         .expect("blocked request");
     assert_eq!(blocked.status(), reqwest::StatusCode::FORBIDDEN);
+
+    server_handle.abort();
+    let _ = server_handle.await;
+}
+
+#[tokio::test]
+async fn admin_policy_overlay_updates_effective_policy_over_real_http() {
+    let state_dir = TempDir::new().expect("tempdir");
+    let audit = state_dir.path().join("audit.jsonl");
+    let hsm = Hsm::open_mock(1, b"password").expect("mock hsm");
+    let _payer = provision_mock_solana_key(&hsm, SOLANA_LABEL, SOLANA_OBJECT_ID).await;
+    let cfg = base_config(
+        state_dir.path(),
+        &audit,
+        "127.0.0.1:0",
+        vec![solana_key(SOLANA_LABEL, SOLANA_OBJECT_ID)],
+    );
+    let (base_url, server_handle) = spawn_server(cfg, hsm, SIGNER_TOKEN, ADMIN_TOKEN).await;
+    let client = Client::new();
+
+    let forbidden = client
+        .patch(format!("{base_url}/admin/keys/{SOLANA_LABEL}/policy"))
+        .bearer_auth(SIGNER_TOKEN)
+        .json(&serde_json::json!({ "max_signs_per_minute": 3 }))
+        .send()
+        .await
+        .expect("signer patch request");
+    assert_eq!(forbidden.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+    let patched: serde_json::Value = client
+        .patch(format!("{base_url}/admin/keys/{SOLANA_LABEL}/policy"))
+        .bearer_auth(ADMIN_TOKEN)
+        .json(&serde_json::json!({
+            "max_signs_per_minute": 3,
+            "per_tx_cap_lamports": "2000"
+        }))
+        .send()
+        .await
+        .expect("admin patch request")
+        .error_for_status()
+        .expect("admin patch status")
+        .json()
+        .await
+        .expect("admin patch body");
+    assert_eq!(patched["policy_source"], "config+overlay");
+    assert_eq!(patched["policy"]["max_signs_per_minute"], 3);
+    assert_eq!(patched["policy"]["per_tx_cap_lamports"], "2000");
+    assert!(patched["baseline_policy"].is_object());
+    assert!(patched["overlay"].is_object());
+
+    let signer_view: serde_json::Value = client
+        .get(format!("{base_url}/policy/{SOLANA_LABEL}"))
+        .bearer_auth(SIGNER_TOKEN)
+        .send()
+        .await
+        .expect("signer policy request")
+        .error_for_status()
+        .expect("signer policy status")
+        .json()
+        .await
+        .expect("signer policy body");
+    assert_eq!(signer_view["policy"]["max_signs_per_minute"], 3);
+    assert!(signer_view.get("baseline_policy").is_none());
+
+    let reverted: serde_json::Value = client
+        .delete(format!("{base_url}/admin/keys/{SOLANA_LABEL}/policy"))
+        .bearer_auth(ADMIN_TOKEN)
+        .send()
+        .await
+        .expect("admin delete request")
+        .error_for_status()
+        .expect("admin delete status")
+        .json()
+        .await
+        .expect("admin delete body");
+    assert_eq!(reverted["policy_source"], "config");
+    assert_eq!(reverted["policy"]["max_signs_per_minute"], 30);
 
     server_handle.abort();
     let _ = server_handle.await;

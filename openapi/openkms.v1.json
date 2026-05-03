@@ -78,6 +78,85 @@
         ],
         "type": "object"
       },
+      "AllowedMessage": {
+        "properties": {
+          "allowed_contracts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "allowed_methods": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "allowed_recipients": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "comment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "per_tx_cap": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "type_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type_url"
+        ],
+        "type": "object"
+      },
+      "AllowedProgram": {
+        "properties": {
+          "comment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "AllowedRecipient": {
+        "properties": {
+          "addresses": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "program": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "program",
+          "addresses"
+        ],
+        "type": "object"
+      },
       "CosmosSignRequest": {
         "additionalProperties": false,
         "properties": {
@@ -97,6 +176,32 @@
           "label",
           "sign_doc_b64",
           "expected_chain_id"
+        ],
+        "type": "object"
+      },
+      "DailySpend": {
+        "properties": {
+          "cap": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "day_unix": {
+            "type": "integer"
+          },
+          "spent": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "day_unix",
+          "spent",
+          "cap"
         ],
         "type": "object"
       },
@@ -129,6 +234,125 @@
           "status",
           "hsm_up"
         ],
+        "type": "object"
+      },
+      "KeyPolicy": {
+        "properties": {
+          "allowed_messages": {
+            "items": {
+              "$ref": "#/components/schemas/AllowedMessage"
+            },
+            "type": "array"
+          },
+          "allowed_programs": {
+            "items": {
+              "$ref": "#/components/schemas/AllowedProgram"
+            },
+            "type": "array"
+          },
+          "allowed_recipients": {
+            "items": {
+              "$ref": "#/components/schemas/AllowedRecipient"
+            },
+            "type": "array"
+          },
+          "daily_cap_lamports": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "max_signs_per_day": {
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "max_signs_per_hour": {
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "max_signs_per_minute": {
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "per_tx_cap_lamports": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "KeyPolicyPatch": {
+        "description": "Partial overlay. Non-null fields present in a PATCH replace the corresponding baseline policy field.",
+        "properties": {
+          "allowed_messages": {
+            "items": {
+              "$ref": "#/components/schemas/AllowedMessage"
+            },
+            "type": "array"
+          },
+          "allowed_programs": {
+            "items": {
+              "$ref": "#/components/schemas/AllowedProgram"
+            },
+            "type": "array"
+          },
+          "allowed_recipients": {
+            "items": {
+              "$ref": "#/components/schemas/AllowedRecipient"
+            },
+            "type": "array"
+          },
+          "daily_cap_lamports": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "max_signs_per_day": {
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "max_signs_per_hour": {
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "max_signs_per_minute": {
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "per_tx_cap_lamports": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "KeySummary": {
@@ -173,6 +397,114 @@
           "object_id",
           "derivation_path"
         ],
+        "type": "object"
+      },
+      "PolicyRuntime": {
+        "properties": {
+          "daily_spend": {
+            "items": {
+              "$ref": "#/components/schemas/DailySpend"
+            },
+            "type": "array"
+          },
+          "effective_enabled": {
+            "type": "boolean"
+          },
+          "enabled_override": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "sign_counts": {
+            "$ref": "#/components/schemas/SignCounts"
+          }
+        },
+        "required": [
+          "effective_enabled",
+          "enabled_override",
+          "daily_spend",
+          "sign_counts"
+        ],
+        "type": "object"
+      },
+      "PolicySnapshot": {
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "baseline_policy": {
+            "$ref": "#/components/schemas/KeyPolicy",
+            "description": "Admin responses only."
+          },
+          "chain": {
+            "enum": [
+              "solana",
+              "cosmos",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "derivation_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "effective_enabled": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "object_id": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "overlay": {
+            "$ref": "#/components/schemas/KeyPolicyPatch",
+            "description": "Admin responses only."
+          },
+          "policy": {
+            "$ref": "#/components/schemas/KeyPolicy"
+          },
+          "policy_source": {
+            "description": "Admin responses only.",
+            "enum": [
+              "config",
+              "config+overlay"
+            ],
+            "type": "string"
+          },
+          "runtime": {
+            "$ref": "#/components/schemas/PolicyRuntime"
+          }
+        },
+        "required": [
+          "label",
+          "chain",
+          "address",
+          "object_id",
+          "derivation_path",
+          "effective_enabled",
+          "policy",
+          "runtime"
+        ],
+        "type": "object"
+      },
+      "SignCounts": {
+        "properties": {
+          "per_day": {
+            "$ref": "#/components/schemas/WindowSignCount"
+          },
+          "per_hour": {
+            "$ref": "#/components/schemas/WindowSignCount"
+          },
+          "per_minute": {
+            "$ref": "#/components/schemas/WindowSignCount"
+          }
+        },
         "type": "object"
       },
       "SignResponse": {
@@ -231,6 +563,28 @@
         "required": [
           "label",
           "message_b64"
+        ],
+        "type": "object"
+      },
+      "WindowSignCount": {
+        "properties": {
+          "limit": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "used": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "window_secs": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "limit",
+          "used",
+          "window_secs"
         ],
         "type": "object"
       }
@@ -347,6 +701,191 @@
         ]
       }
     },
+    "/admin/keys/{label}/policy": {
+      "delete": {
+        "operationId": "adminDeletePolicy",
+        "parameters": [
+          {
+            "description": "Configured key label.",
+            "in": "path",
+            "name": "label",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicySnapshot"
+                }
+              }
+            },
+            "description": "Policy overlay was updated and effective policy was reloaded."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ],
+        "summary": "Clear the persisted per-key policy overlay",
+        "tags": [
+          "admin"
+        ]
+      },
+      "get": {
+        "operationId": "adminGetPolicy",
+        "parameters": [
+          {
+            "description": "Configured key label.",
+            "in": "path",
+            "name": "label",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicySnapshot"
+                }
+              }
+            },
+            "description": "Effective policy snapshot and live usage counters."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ],
+        "summary": "Get a key policy snapshot with admin overlay metadata",
+        "tags": [
+          "admin"
+        ]
+      },
+      "patch": {
+        "operationId": "adminPatchPolicy",
+        "parameters": [
+          {
+            "description": "Configured key label.",
+            "in": "path",
+            "name": "label",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KeyPolicyPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicySnapshot"
+                }
+              }
+            },
+            "description": "Policy overlay was updated and effective policy was reloaded."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ],
+        "summary": "Patch a persisted per-key policy overlay",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/policy": {
+      "get": {
+        "operationId": "adminListPolicy",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PolicySnapshot"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Effective policy snapshots and live usage counters."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ],
+        "summary": "List policy snapshots with admin overlay metadata",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/health": {
       "get": {
         "operationId": "getHealth",
@@ -416,6 +955,87 @@
         "summary": "Expose Prometheus metrics",
         "tags": [
           "metrics"
+        ]
+      }
+    },
+    "/policy": {
+      "get": {
+        "operationId": "listPolicy",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PolicySnapshot"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Effective policy snapshots and live usage counters."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "signerBearer": []
+          }
+        ],
+        "summary": "List effective signing policies and live usage",
+        "tags": [
+          "signing"
+        ]
+      }
+    },
+    "/policy/{label}": {
+      "get": {
+        "operationId": "getPolicy",
+        "parameters": [
+          {
+            "description": "Configured key label.",
+            "in": "path",
+            "name": "label",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicySnapshot"
+                }
+              }
+            },
+            "description": "Effective policy snapshot and live usage counters."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "signerBearer": []
+          }
+        ],
+        "summary": "Get effective signing policy and live usage for a key",
+        "tags": [
+          "signing"
         ]
       }
     },

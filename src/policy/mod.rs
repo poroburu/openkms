@@ -20,6 +20,7 @@ use std::{
 
 use governor::clock::DefaultClock;
 use governor::{Quota, RateLimiter, state::InMemoryState, state::direct::NotKeyed};
+use serde::Serialize;
 use tokio::sync::RwLock;
 
 use crate::{
@@ -101,6 +102,47 @@ impl PolicyError {
     }
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct PolicyEngineSnapshot {
+    pub label: String,
+    pub chain: Chain,
+    pub policy: KeyPolicy,
+    pub runtime: PolicyRuntimeSnapshot,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct PolicyRuntimeSnapshot {
+    pub effective_enabled: bool,
+    pub enabled_override: Option<bool>,
+    pub daily_spend: Vec<DailySpendSnapshot>,
+    pub sign_counts: SignCountSnapshot,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct DailySpendSnapshot {
+    pub token: String,
+    pub day_unix: i64,
+    pub spent: String,
+    pub cap: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SignCountSnapshot {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub per_minute: Option<WindowSignCount>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub per_hour: Option<WindowSignCount>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub per_day: Option<WindowSignCount>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct WindowSignCount {
+    pub limit: u32,
+    pub used: usize,
+    pub window_secs: u64,
+}
+
 /// Default policy engine.
 ///
 /// Stores one `KeyState` per configured key label. The HashMap is replaced
@@ -134,13 +176,15 @@ struct KeyState {
     runtime: RwLock<KeyRuntime>,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct KeyRuntime {
     /// Runtime kill-switch override (None = follow config flag).
     enabled_override: Option<bool>,
     /// Per-token cumulative spend, keyed by token's human string. We track
     /// (`day_unix`, `amount`) so we can reset at midnight UTC.
     daily_spend: BTreeMap<String, (i64, u128)>,
+    /// Accepted policy evaluations, kept for approximate live usage display.
+    accepted_signs: Vec<i64>,
 }
 
 impl KeyState {
@@ -155,6 +199,29 @@ impl DefaultPolicyEngine {
         Self {
             states: RwLock::new(states),
         }
+    }
+
+    pub async fn snapshot(&self, label: &str) -> Option<PolicyEngineSnapshot> {
+        let states = self.states.read().await;
+        let state = states.get(label)?.clone();
+        drop(states);
+        Some(snapshot_for_state(label.to_string(), &state).await)
+    }
+
+    pub async fn snapshots(&self) -> Vec<PolicyEngineSnapshot> {
+        let states = self.states.read().await;
+        let mut entries: Vec<(String, Arc<KeyState>)> = states
+            .iter()
+            .map(|(label, state)| (label.clone(), state.clone()))
+            .collect();
+        drop(states);
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
+
+        let mut out = Vec::with_capacity(entries.len());
+        for (label, state) in entries {
+            out.push(snapshot_for_state(label, &state).await);
+        }
+        out
     }
 }
 
@@ -249,16 +316,12 @@ impl PolicyEngine for DefaultPolicyEngine {
 
         // Daily cap: update per-token spend counters for today (UTC). Any
         // transfer that would push the running total over the cap denies.
+        // Accepted sign timestamps are recorded for policy visibility.
+        let now = chrono::Utc::now().timestamp();
+        let today = unix_day_utc_at(now);
+        let mut rt = state.runtime.write().await;
         if let Some(cap) = state.daily_cap {
-            let today = unix_day_utc();
-            let mut rt = state.runtime.write().await;
-            // Reset counters whose day-bucket is stale.
-            for (_, (day, amount)) in rt.daily_spend.iter_mut() {
-                if *day != today {
-                    *day = today;
-                    *amount = 0;
-                }
-            }
+            reset_stale_daily_spend(&mut rt, today);
             let native_label = "native".to_string();
             let entry = rt
                 .daily_spend
@@ -274,6 +337,7 @@ impl PolicyEngine for DefaultPolicyEngine {
             }
             entry.1 = projected;
         }
+        record_accepted_sign(&mut rt, now);
 
         Ok(())
     }
@@ -289,6 +353,7 @@ impl PolicyEngine for DefaultPolicyEngine {
                 KeyRuntime {
                     enabled_override: rt.enabled_override,
                     daily_spend: rt.daily_spend.clone(),
+                    accepted_signs: rt.accepted_signs.clone(),
                 },
             );
         }
@@ -365,6 +430,7 @@ fn build_states(
             .map(|rt| KeyRuntime {
                 enabled_override: rt.enabled_override,
                 daily_spend: rt.daily_spend.clone(),
+                accepted_signs: rt.accepted_signs.clone(),
             })
             .unwrap_or_default();
 
@@ -390,13 +456,97 @@ fn parse_u128(s: Option<&str>) -> Option<u128> {
     s.and_then(|v| v.trim().parse::<u128>().ok())
 }
 
-fn unix_day_utc() -> i64 {
-    chrono::Utc::now()
+fn unix_day_utc_at(timestamp: i64) -> i64 {
+    chrono::DateTime::from_timestamp(timestamp, 0)
+        .unwrap_or_else(chrono::Utc::now)
         .date_naive()
         .and_hms_opt(0, 0, 0)
         .unwrap()
         .and_utc()
         .timestamp()
+}
+
+fn reset_stale_daily_spend(rt: &mut KeyRuntime, today: i64) {
+    for (_, (day, amount)) in rt.daily_spend.iter_mut() {
+        if *day != today {
+            *day = today;
+            *amount = 0;
+        }
+    }
+}
+
+fn record_accepted_sign(rt: &mut KeyRuntime, now: i64) {
+    rt.accepted_signs.retain(|ts| *ts >= now - 86_400);
+    rt.accepted_signs.push(now);
+}
+
+async fn snapshot_for_state(label: String, state: &KeyState) -> PolicyEngineSnapshot {
+    let now = chrono::Utc::now().timestamp();
+    let today = unix_day_utc_at(now);
+    let rt = state.runtime.read().await;
+    PolicyEngineSnapshot {
+        label,
+        chain: state.chain,
+        policy: state.policy.clone(),
+        runtime: PolicyRuntimeSnapshot {
+            effective_enabled: state.is_enabled(&rt),
+            enabled_override: rt.enabled_override,
+            daily_spend: daily_spend_snapshot(state, &rt, today),
+            sign_counts: sign_count_snapshot(state, &rt, now),
+        },
+    }
+}
+
+fn daily_spend_snapshot(state: &KeyState, rt: &KeyRuntime, today: i64) -> Vec<DailySpendSnapshot> {
+    let mut out: Vec<DailySpendSnapshot> = rt
+        .daily_spend
+        .iter()
+        .map(|(token, (day, amount))| DailySpendSnapshot {
+            token: token.clone(),
+            day_unix: today,
+            spent: if *day == today { *amount } else { 0 }.to_string(),
+            cap: state.daily_cap.map(|cap| cap.to_string()),
+        })
+        .collect();
+    if out.is_empty() && state.daily_cap.is_some() {
+        out.push(DailySpendSnapshot {
+            token: "native".into(),
+            day_unix: today,
+            spent: "0".into(),
+            cap: state.daily_cap.map(|cap| cap.to_string()),
+        });
+    }
+    out
+}
+
+fn sign_count_snapshot(state: &KeyState, rt: &KeyRuntime, now: i64) -> SignCountSnapshot {
+    SignCountSnapshot {
+        per_minute: state
+            .policy
+            .max_signs_per_minute
+            .map(|limit| window_sign_count(limit, 60, rt, now)),
+        per_hour: state
+            .policy
+            .max_signs_per_hour
+            .map(|limit| window_sign_count(limit, 3_600, rt, now)),
+        per_day: state
+            .policy
+            .max_signs_per_day
+            .map(|limit| window_sign_count(limit, 86_400, rt, now)),
+    }
+}
+
+fn window_sign_count(limit: u32, window_secs: u64, rt: &KeyRuntime, now: i64) -> WindowSignCount {
+    let window = i64::try_from(window_secs).unwrap_or(i64::MAX);
+    WindowSignCount {
+        limit,
+        used: rt
+            .accepted_signs
+            .iter()
+            .filter(|ts| **ts >= now.saturating_sub(window))
+            .count(),
+        window_secs,
+    }
 }
 
 #[cfg(test)]
@@ -604,6 +754,30 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(err, PolicyError::DailyCapExceeded { .. }));
+    }
+
+    #[tokio::test]
+    async fn snapshot_reports_runtime_usage() {
+        let policy = KeyPolicy {
+            enabled: true,
+            max_signs_per_minute: Some(10),
+            daily_cap_lamports: Some("1000".into()),
+            allowed_programs: vec![AllowedProgram {
+                id: "P".into(),
+                comment: None,
+            }],
+            ..Default::default()
+        };
+        let cfg = base_config(Chain::Solana, policy);
+        let eng = DefaultPolicyEngine::new(&cfg);
+        eng.evaluate(&cfg.keys[0], &solana_intent("P", 200, "R"))
+            .await
+            .unwrap();
+
+        let snapshot = eng.snapshot("k1").await.unwrap();
+        assert!(snapshot.runtime.effective_enabled);
+        assert_eq!(snapshot.runtime.sign_counts.per_minute.unwrap().used, 1);
+        assert_eq!(snapshot.runtime.daily_spend[0].spent, "200");
     }
 
     #[tokio::test]

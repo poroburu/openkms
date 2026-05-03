@@ -39,16 +39,16 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::{
-    admin::AdminStore,
+    admin::{AdminStore, KeyFlags},
     audit::AuditLog,
     chain::{
         Chain, ChainError, ChainSigner, Intent, RequestContext, SignRequest, cosmos::CosmosSigner,
         solana::SolanaSigner,
     },
-    config::{Config, KeyDef},
+    config::{Config, KeyDef, KeyPolicy, KeyPolicyPatch},
     hsm::Hsm,
     metrics::Metrics,
-    policy::{DefaultPolicyEngine, PolicyEngine, PolicyError},
+    policy::{DefaultPolicyEngine, PolicyEngine, PolicyError, PolicyRuntimeSnapshot},
     replay::{CachedResponse, ReplayCache},
 };
 
@@ -82,13 +82,14 @@ impl AppState {
         signer_token: String,
         admin_token: String,
     ) -> Result<Self> {
-        let policy = Arc::new(DefaultPolicyEngine::new(&config));
-        let audit = AuditLog::open(&config.audit)?;
         let state_dir = config
             .state_dir
             .clone()
             .unwrap_or_else(|| std::path::PathBuf::from("/var/lib/openkms"));
         let admin = AdminStore::open(&state_dir)?;
+        let effective_config = admin.effective_config(&config).await?;
+        let policy = Arc::new(DefaultPolicyEngine::new(&effective_config));
+        let audit = AuditLog::open(&config.audit)?;
         admin.apply_all(policy.as_ref()).await;
 
         let metrics = Metrics::new()?;
@@ -150,14 +151,23 @@ pub fn router(state: AppState) -> Router {
     let signer_routes = Router::new()
         .route("/sign/solana", post(sign_solana))
         .route("/sign/cosmos", post(sign_cosmos))
+        .route("/policy", get(list_policy))
+        .route("/policy/:label", get(get_policy))
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
             signer_auth_mw,
         ));
 
     let admin_routes = Router::new()
+        .route("/admin/policy", get(admin_list_policy))
         .route("/admin/keys/:label/enable", post(admin_enable))
         .route("/admin/keys/:label/disable", post(admin_disable))
+        .route(
+            "/admin/keys/:label/policy",
+            get(admin_get_policy)
+                .patch(admin_patch_policy)
+                .delete(admin_delete_policy),
+        )
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
             admin_auth_mw,
@@ -223,10 +233,19 @@ struct KeySummary {
     derivation_path: Option<String>,
 }
 
-async fn list_keys(State(state): State<AppState>) -> impl IntoResponse {
+async fn list_keys(State(state): State<AppState>) -> axum::response::Response {
+    let config = match state.admin.effective_config(&state.config).await {
+        Ok(config) => config,
+        Err(e) => {
+            return json_err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("policy overlay error: {e}"),
+            );
+        }
+    };
     let mut out = Vec::new();
     let flags = state.admin.snapshot().await.enabled;
-    for k in state.config.keys.iter() {
+    for k in config.keys.iter() {
         let address = match k.chain {
             Chain::Solana => state
                 .solana_signers
@@ -250,7 +269,128 @@ async fn list_keys(State(state): State<AppState>) -> impl IntoResponse {
             derivation_path: k.derivation_path.clone(),
         });
     }
-    Json(out)
+    Json(out).into_response()
+}
+
+#[derive(Serialize)]
+struct PolicySnapshotBody {
+    label: String,
+    chain: String,
+    address: String,
+    object_id: u16,
+    derivation_path: Option<String>,
+    effective_enabled: bool,
+    policy: KeyPolicy,
+    runtime: PolicyRuntimeSnapshot,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    policy_source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    baseline_policy: Option<KeyPolicy>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    overlay: Option<KeyPolicyPatch>,
+}
+
+async fn list_policy(State(state): State<AppState>) -> axum::response::Response {
+    policy_list_response(&state, false).await
+}
+
+async fn get_policy(
+    State(state): State<AppState>,
+    AxumPath(label): AxumPath<String>,
+) -> axum::response::Response {
+    policy_one_response(&state, &label, false).await
+}
+
+async fn admin_list_policy(State(state): State<AppState>) -> axum::response::Response {
+    policy_list_response(&state, true).await
+}
+
+async fn admin_get_policy(
+    State(state): State<AppState>,
+    AxumPath(label): AxumPath<String>,
+) -> axum::response::Response {
+    policy_one_response(&state, &label, true).await
+}
+
+async fn policy_list_response(state: &AppState, include_admin: bool) -> axum::response::Response {
+    let flags = state.admin.snapshot().await;
+    let snapshots = state.policy.snapshots().await;
+    let mut out = Vec::with_capacity(snapshots.len());
+    for snapshot in snapshots {
+        if let Some(body) = policy_body(state, snapshot, include_admin, &flags) {
+            out.push(body);
+        }
+    }
+    Json(out).into_response()
+}
+
+async fn policy_one_response(
+    state: &AppState,
+    label: &str,
+    include_admin: bool,
+) -> axum::response::Response {
+    if !state.keys.contains_key(label) {
+        return json_err(StatusCode::NOT_FOUND, "unknown key label");
+    }
+    let flags = state.admin.snapshot().await;
+    let Some(snapshot) = state.policy.snapshot(label).await else {
+        return json_err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "policy state missing key",
+        );
+    };
+    match policy_body(state, snapshot, include_admin, &flags) {
+        Some(body) => Json(body).into_response(),
+        None => json_err(StatusCode::INTERNAL_SERVER_ERROR, "key metadata missing"),
+    }
+}
+
+fn policy_body(
+    state: &AppState,
+    snapshot: crate::policy::PolicyEngineSnapshot,
+    include_admin: bool,
+    flags: &KeyFlags,
+) -> Option<PolicySnapshotBody> {
+    let key = state.keys.get(&snapshot.label)?;
+    let overlay = flags.policy_overlays.get(&snapshot.label).cloned();
+    let policy_source = if include_admin {
+        Some(if overlay.is_some() {
+            "config+overlay".to_string()
+        } else {
+            "config".to_string()
+        })
+    } else {
+        None
+    };
+    Some(PolicySnapshotBody {
+        label: snapshot.label.clone(),
+        chain: snapshot.chain.as_str().to_string(),
+        address: key_address(state, key),
+        object_id: key.object_id,
+        derivation_path: key.derivation_path.clone(),
+        effective_enabled: snapshot.runtime.effective_enabled,
+        policy: snapshot.policy,
+        runtime: snapshot.runtime,
+        policy_source,
+        baseline_policy: include_admin.then(|| key.policy.clone()),
+        overlay: include_admin.then_some(overlay).flatten(),
+    })
+}
+
+fn key_address(state: &AppState, key: &KeyDef) -> String {
+    match key.chain {
+        Chain::Solana => state
+            .solana_signers
+            .get(&key.label)
+            .map(|s| s.address.clone())
+            .unwrap_or_default(),
+        Chain::Cosmos => state
+            .cosmos_signers
+            .get(&key.label)
+            .map(|s| s.default_address.clone())
+            .unwrap_or_default(),
+        Chain::Unknown => String::new(),
+    }
 }
 
 async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse {
@@ -493,6 +633,43 @@ async fn admin_disable(
     admin_set(&state, &label, false).await
 }
 
+async fn admin_patch_policy(
+    State(state): State<AppState>,
+    AxumPath(label): AxumPath<String>,
+    Json(body): Json<KeyPolicyPatch>,
+) -> axum::response::Response {
+    if !state.keys.contains_key(&label) {
+        return json_err(StatusCode::NOT_FOUND, "unknown key label");
+    }
+    if let Err(e) = state
+        .admin
+        .set_policy_overlay(&state.config, &label, body)
+        .await
+    {
+        return json_err(StatusCode::BAD_REQUEST, &e.to_string());
+    }
+    if let Err(e) = reload_effective_policy(&state).await {
+        return json_err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string());
+    }
+    policy_one_response(&state, &label, true).await
+}
+
+async fn admin_delete_policy(
+    State(state): State<AppState>,
+    AxumPath(label): AxumPath<String>,
+) -> axum::response::Response {
+    if !state.keys.contains_key(&label) {
+        return json_err(StatusCode::NOT_FOUND, "unknown key label");
+    }
+    if let Err(e) = state.admin.clear_policy_overlay(&label).await {
+        return json_err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string());
+    }
+    if let Err(e) = reload_effective_policy(&state).await {
+        return json_err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string());
+    }
+    policy_one_response(&state, &label, true).await
+}
+
 async fn admin_set(state: &AppState, label: &str, enabled: bool) -> axum::response::Response {
     if !state.keys.contains_key(label) {
         return json_err(StatusCode::NOT_FOUND, "unknown key label");
@@ -509,6 +686,13 @@ async fn admin_set(state: &AppState, label: &str, enabled: bool) -> axum::respon
         enabled,
     })
     .into_response()
+}
+
+async fn reload_effective_policy(state: &AppState) -> Result<()> {
+    let effective = state.admin.effective_config(&state.config).await?;
+    state.policy.reload(&effective).await;
+    state.admin.apply_all(state.policy.as_ref()).await;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

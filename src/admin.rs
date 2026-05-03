@@ -4,10 +4,10 @@
 //! axum app. It lets an operator disable a key label immediately (e.g. when
 //! an Openclaw worker is misbehaving) without restarting the service.
 //!
-//! Persistence: the current "enabled" state of every configured key is
-//! mirrored into `{state_dir}/key-flags.json`. On startup the server reads
-//! this file and calls [`PolicyEngine::set_enabled`] accordingly — so a
-//! `disable` survives a restart.
+//! Persistence: key enabled overrides and per-key policy overlays are mirrored
+//! into `{state_dir}/key-flags.json`. On startup the server reads this file,
+//! rebuilds effective policy from `config.toml` plus overlays, then calls
+//! [`PolicyEngine::set_enabled`] so a `disable` survives a restart.
 
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
@@ -15,13 +15,19 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-use crate::policy::PolicyEngine;
+use crate::{
+    config::{Config, KeyPolicyPatch},
+    policy::PolicyEngine,
+};
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct KeyFlags {
     /// Map key label -> override flag. Missing labels follow the config.
     #[serde(default)]
     pub enabled: BTreeMap<String, bool>,
+    /// Partial per-key policy overlays applied on top of `config.toml`.
+    #[serde(default)]
+    pub policy_overlays: BTreeMap<String, KeyPolicyPatch>,
 }
 
 /// On-disk-backed admin store. Clone is cheap (internal `Arc`).
@@ -60,6 +66,42 @@ impl AdminStore {
     /// Return a snapshot of the current flag map.
     pub async fn snapshot(&self) -> KeyFlags {
         self.inner.flags.lock().await.clone()
+    }
+
+    /// Apply persisted policy overlays to a baseline config snapshot.
+    pub async fn effective_config(&self, baseline: &Config) -> Result<Config> {
+        let flags = self.inner.flags.lock().await;
+        effective_config_from_overlays(baseline, &flags.policy_overlays)
+    }
+
+    /// Store or update a partial policy overlay for a key label.
+    pub async fn set_policy_overlay(
+        &self,
+        baseline: &Config,
+        label: &str,
+        patch: KeyPolicyPatch,
+    ) -> Result<KeyPolicyPatch> {
+        let mut flags = self.inner.flags.lock().await;
+        let mut merged = flags
+            .policy_overlays
+            .get(label)
+            .cloned()
+            .unwrap_or_default();
+        merged.merge(patch);
+        validate_overlay(baseline, label, &merged)?;
+        flags
+            .policy_overlays
+            .insert(label.to_string(), merged.clone());
+        self.persist(&flags).await?;
+        Ok(merged)
+    }
+
+    /// Clear any persisted policy overlay for a key label.
+    pub async fn clear_policy_overlay(&self, label: &str) -> Result<bool> {
+        let mut flags = self.inner.flags.lock().await;
+        let removed = flags.policy_overlays.remove(label).is_some();
+        self.persist(&flags).await?;
+        Ok(removed)
     }
 
     /// Persist a new flag to disk. `engine` is updated synchronously in the
@@ -112,11 +154,39 @@ impl AdminStore {
     }
 }
 
+fn effective_config_from_overlays(
+    baseline: &Config,
+    overlays: &BTreeMap<String, KeyPolicyPatch>,
+) -> Result<Config> {
+    let mut cfg = baseline.clone();
+    for (label, overlay) in overlays {
+        let key = cfg
+            .keys
+            .iter_mut()
+            .find(|key| key.label == *label)
+            .ok_or_else(|| anyhow::anyhow!("unknown key label {label:?} in policy overlay"))?;
+        overlay.apply_to(&mut key.policy);
+        baseline.validate_key_policy(label, &key.policy)?;
+    }
+    Ok(cfg)
+}
+
+fn validate_overlay(baseline: &Config, label: &str, overlay: &KeyPolicyPatch) -> Result<()> {
+    let mut key = baseline
+        .keys
+        .iter()
+        .find(|key| key.label == label)
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("unknown key label {label:?}"))?;
+    overlay.apply_to(&mut key.policy);
+    baseline.validate_key_policy(label, &key.policy)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chain::Intent;
-    use crate::config::KeyDef;
+    use crate::chain::{Chain, Intent};
+    use crate::config::{AllowedProgram, KeyDef, KeyPolicy};
     use async_trait::async_trait;
     use tempfile::TempDir;
 
@@ -158,5 +228,94 @@ mod tests {
         let log = engine2.log.lock().await;
         assert!(log.contains(&("k1".to_string(), false)));
         assert!(log.contains(&("k2".to_string(), true)));
+    }
+
+    fn baseline_config() -> Config {
+        Config {
+            server: crate::config::ServerConfig {
+                listen: "127.0.0.1:0".into(),
+                signer_token_file: "/tmp/x".into(),
+                admin_token_file: "/tmp/x".into(),
+                inflight_limit: 1,
+                replay_window_secs: 1,
+            },
+            hsm: crate::config::HsmConfig {
+                connector_url: "mock".into(),
+                auth_key_id: 1,
+                password_file: "/tmp/x".into(),
+            },
+            audit: crate::config::AuditConfig {
+                path: "/tmp/audit.jsonl".into(),
+                hmac_key_file: None,
+            },
+            cosmos: Default::default(),
+            state_dir: None,
+            keys: vec![KeyDef {
+                label: "k1".into(),
+                chain: Chain::Solana,
+                object_id: 1,
+                derivation_path: None,
+                address_style: Default::default(),
+                default_hrp: None,
+                policy: KeyPolicy {
+                    enabled: true,
+                    allowed_programs: vec![AllowedProgram {
+                        id: "11111111111111111111111111111111".into(),
+                        comment: None,
+                    }],
+                    ..Default::default()
+                },
+            }],
+        }
+    }
+
+    #[tokio::test]
+    async fn policy_overlays_persist_and_apply_to_effective_config() {
+        let dir = TempDir::new().unwrap();
+        let baseline = baseline_config();
+        let store = AdminStore::open(dir.path()).unwrap();
+        store
+            .set_policy_overlay(
+                &baseline,
+                "k1",
+                KeyPolicyPatch {
+                    max_signs_per_minute: Some(5),
+                    per_tx_cap_lamports: Some("1000".into()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+
+        let reopened = AdminStore::open(dir.path()).unwrap();
+        let effective = reopened.effective_config(&baseline).await.unwrap();
+        assert_eq!(effective.keys[0].policy.max_signs_per_minute, Some(5));
+        assert_eq!(
+            effective.keys[0].policy.per_tx_cap_lamports.as_deref(),
+            Some("1000")
+        );
+    }
+
+    #[tokio::test]
+    async fn invalid_policy_overlay_is_rejected() {
+        let dir = TempDir::new().unwrap();
+        let baseline = baseline_config();
+        let store = AdminStore::open(dir.path()).unwrap();
+        let err = store
+            .set_policy_overlay(
+                &baseline,
+                "k1",
+                KeyPolicyPatch {
+                    allowed_programs: Some(vec![]),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap_err();
+        let message = err.to_string();
+        assert!(
+            message.contains("policy block is empty") || message.contains("allowed_programs"),
+            "unexpected error: {message}"
+        );
     }
 }

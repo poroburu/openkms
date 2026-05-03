@@ -110,7 +110,7 @@ pub enum AddressStyle {
 }
 
 /// Per-key policy block. Evaluated in order by the default policy engine.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
 pub struct KeyPolicy {
     #[serde(default)]
     pub enabled: bool,
@@ -132,8 +132,93 @@ pub struct KeyPolicy {
     pub allowed_recipients: Vec<AllowedRecipient>,
 }
 
+/// Partial per-key policy overlay persisted by the admin API.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
+pub struct KeyPolicyPatch {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_signs_per_minute: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_signs_per_hour: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_signs_per_day: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub daily_cap_lamports: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub per_tx_cap_lamports: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_programs: Option<Vec<AllowedProgram>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_messages: Option<Vec<AllowedMessage>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_recipients: Option<Vec<AllowedRecipient>>,
+}
+
+impl KeyPolicyPatch {
+    pub fn apply_to(&self, policy: &mut KeyPolicy) {
+        if let Some(enabled) = self.enabled {
+            policy.enabled = enabled;
+        }
+        if let Some(max) = self.max_signs_per_minute {
+            policy.max_signs_per_minute = Some(max);
+        }
+        if let Some(max) = self.max_signs_per_hour {
+            policy.max_signs_per_hour = Some(max);
+        }
+        if let Some(max) = self.max_signs_per_day {
+            policy.max_signs_per_day = Some(max);
+        }
+        if let Some(cap) = self.daily_cap_lamports.as_ref() {
+            policy.daily_cap_lamports = Some(cap.clone());
+        }
+        if let Some(cap) = self.per_tx_cap_lamports.as_ref() {
+            policy.per_tx_cap_lamports = Some(cap.clone());
+        }
+        if let Some(programs) = self.allowed_programs.as_ref() {
+            policy.allowed_programs = programs.clone();
+        }
+        if let Some(messages) = self.allowed_messages.as_ref() {
+            policy.allowed_messages = messages.clone();
+        }
+        if let Some(recipients) = self.allowed_recipients.as_ref() {
+            policy.allowed_recipients = recipients.clone();
+        }
+    }
+
+    pub fn merge(&mut self, patch: KeyPolicyPatch) {
+        if patch.enabled.is_some() {
+            self.enabled = patch.enabled;
+        }
+        if patch.max_signs_per_minute.is_some() {
+            self.max_signs_per_minute = patch.max_signs_per_minute;
+        }
+        if patch.max_signs_per_hour.is_some() {
+            self.max_signs_per_hour = patch.max_signs_per_hour;
+        }
+        if patch.max_signs_per_day.is_some() {
+            self.max_signs_per_day = patch.max_signs_per_day;
+        }
+        if patch.daily_cap_lamports.is_some() {
+            self.daily_cap_lamports = patch.daily_cap_lamports;
+        }
+        if patch.per_tx_cap_lamports.is_some() {
+            self.per_tx_cap_lamports = patch.per_tx_cap_lamports;
+        }
+        if patch.allowed_programs.is_some() {
+            self.allowed_programs = patch.allowed_programs;
+        }
+        if patch.allowed_messages.is_some() {
+            self.allowed_messages = patch.allowed_messages;
+        }
+        if patch.allowed_recipients.is_some() {
+            self.allowed_recipients = patch.allowed_recipients;
+        }
+    }
+}
+
 /// Solana program allowlist entry.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct AllowedProgram {
     pub id: String,
     #[serde(default)]
@@ -142,7 +227,7 @@ pub struct AllowedProgram {
 
 /// Cosmos Msg-type allowlist entry (also drives recipient / contract checks
 /// for specific type_urls).
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct AllowedMessage {
     pub type_url: String,
     #[serde(default)]
@@ -158,7 +243,7 @@ pub struct AllowedMessage {
 }
 
 /// Recipient allowlist tied to a chain-local program/instruction family.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct AllowedRecipient {
     pub program: String,
     pub addresses: Vec<String>,
@@ -227,6 +312,17 @@ impl Config {
         }
 
         Ok(())
+    }
+
+    pub fn validate_key_policy(&self, label: &str, policy: &KeyPolicy) -> Result<()> {
+        let mut key = self
+            .keys
+            .iter()
+            .find(|k| k.label == label)
+            .cloned()
+            .ok_or_else(|| anyhow!("unknown key label {label:?}"))?;
+        key.policy = policy.clone();
+        validate_key(&key)
     }
 }
 

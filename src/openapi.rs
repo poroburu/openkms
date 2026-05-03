@@ -66,6 +66,25 @@ pub fn spec() -> Value {
                     }
                 }
             },
+            "/policy": {
+                "get": {
+                    "tags": ["signing"],
+                    "summary": "List effective signing policies and live usage",
+                    "operationId": "listPolicy",
+                    "security": [{ "signerBearer": [] }],
+                    "responses": policy_list_responses()
+                }
+            },
+            "/policy/{label}": {
+                "get": {
+                    "tags": ["signing"],
+                    "summary": "Get effective signing policy and live usage for a key",
+                    "operationId": "getPolicy",
+                    "security": [{ "signerBearer": [] }],
+                    "parameters": [key_label_parameter()],
+                    "responses": policy_get_responses()
+                }
+            },
             "/sign/solana": {
                 "post": {
                     "tags": ["signing"],
@@ -118,6 +137,49 @@ pub fn spec() -> Value {
                     "security": [{ "adminBearer": [] }],
                     "parameters": [key_label_parameter()],
                     "responses": admin_responses()
+                }
+            },
+            "/admin/policy": {
+                "get": {
+                    "tags": ["admin"],
+                    "summary": "List policy snapshots with admin overlay metadata",
+                    "operationId": "adminListPolicy",
+                    "security": [{ "adminBearer": [] }],
+                    "responses": policy_list_responses()
+                }
+            },
+            "/admin/keys/{label}/policy": {
+                "get": {
+                    "tags": ["admin"],
+                    "summary": "Get a key policy snapshot with admin overlay metadata",
+                    "operationId": "adminGetPolicy",
+                    "security": [{ "adminBearer": [] }],
+                    "parameters": [key_label_parameter()],
+                    "responses": policy_get_responses()
+                },
+                "patch": {
+                    "tags": ["admin"],
+                    "summary": "Patch a persisted per-key policy overlay",
+                    "operationId": "adminPatchPolicy",
+                    "security": [{ "adminBearer": [] }],
+                    "parameters": [key_label_parameter()],
+                    "requestBody": {
+                        "required": true,
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/KeyPolicyPatch" }
+                            }
+                        }
+                    },
+                    "responses": admin_policy_mutation_responses()
+                },
+                "delete": {
+                    "tags": ["admin"],
+                    "summary": "Clear the persisted per-key policy overlay",
+                    "operationId": "adminDeletePolicy",
+                    "security": [{ "adminBearer": [] }],
+                    "parameters": [key_label_parameter()],
+                    "responses": admin_policy_mutation_responses()
                 }
             },
             "/metrics": {
@@ -261,6 +323,132 @@ pub fn spec() -> Value {
                         "enabled": { "type": "boolean" }
                     }
                 },
+                "PolicySnapshot": {
+                    "type": "object",
+                    "required": ["label", "chain", "address", "object_id", "derivation_path", "effective_enabled", "policy", "runtime"],
+                    "properties": {
+                        "label": { "type": "string" },
+                        "chain": {
+                            "type": "string",
+                            "enum": ["solana", "cosmos", "unknown"]
+                        },
+                        "address": { "type": "string" },
+                        "object_id": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 65535
+                        },
+                        "derivation_path": { "type": ["string", "null"] },
+                        "effective_enabled": { "type": "boolean" },
+                        "policy": { "$ref": "#/components/schemas/KeyPolicy" },
+                        "runtime": { "$ref": "#/components/schemas/PolicyRuntime" },
+                        "policy_source": {
+                            "type": "string",
+                            "enum": ["config", "config+overlay"],
+                            "description": "Admin responses only."
+                        },
+                        "baseline_policy": {
+                            "$ref": "#/components/schemas/KeyPolicy",
+                            "description": "Admin responses only."
+                        },
+                        "overlay": {
+                            "$ref": "#/components/schemas/KeyPolicyPatch",
+                            "description": "Admin responses only."
+                        }
+                    }
+                },
+                "KeyPolicy": {
+                    "type": "object",
+                    "properties": key_policy_properties()
+                },
+                "KeyPolicyPatch": {
+                    "type": "object",
+                    "description": "Partial overlay. Non-null fields present in a PATCH replace the corresponding baseline policy field.",
+                    "properties": key_policy_properties()
+                },
+                "AllowedProgram": {
+                    "type": "object",
+                    "required": ["id"],
+                    "properties": {
+                        "id": { "type": "string" },
+                        "comment": { "type": ["string", "null"] }
+                    }
+                },
+                "AllowedMessage": {
+                    "type": "object",
+                    "required": ["type_url"],
+                    "properties": {
+                        "type_url": { "type": "string" },
+                        "per_tx_cap": {
+                            "type": ["object", "null"],
+                            "additionalProperties": { "type": "string" }
+                        },
+                        "allowed_recipients": {
+                            "type": "array",
+                            "items": { "type": "string" }
+                        },
+                        "allowed_contracts": {
+                            "type": "array",
+                            "items": { "type": "string" }
+                        },
+                        "allowed_methods": {
+                            "type": "array",
+                            "items": { "type": "string" }
+                        },
+                        "comment": { "type": ["string", "null"] }
+                    }
+                },
+                "AllowedRecipient": {
+                    "type": "object",
+                    "required": ["program", "addresses"],
+                    "properties": {
+                        "program": { "type": "string" },
+                        "addresses": {
+                            "type": "array",
+                            "items": { "type": "string" }
+                        }
+                    }
+                },
+                "PolicyRuntime": {
+                    "type": "object",
+                    "required": ["effective_enabled", "enabled_override", "daily_spend", "sign_counts"],
+                    "properties": {
+                        "effective_enabled": { "type": "boolean" },
+                        "enabled_override": { "type": ["boolean", "null"] },
+                        "daily_spend": {
+                            "type": "array",
+                            "items": { "$ref": "#/components/schemas/DailySpend" }
+                        },
+                        "sign_counts": { "$ref": "#/components/schemas/SignCounts" }
+                    }
+                },
+                "DailySpend": {
+                    "type": "object",
+                    "required": ["token", "day_unix", "spent", "cap"],
+                    "properties": {
+                        "token": { "type": "string" },
+                        "day_unix": { "type": "integer" },
+                        "spent": { "type": "string" },
+                        "cap": { "type": ["string", "null"] }
+                    }
+                },
+                "SignCounts": {
+                    "type": "object",
+                    "properties": {
+                        "per_minute": { "$ref": "#/components/schemas/WindowSignCount" },
+                        "per_hour": { "$ref": "#/components/schemas/WindowSignCount" },
+                        "per_day": { "$ref": "#/components/schemas/WindowSignCount" }
+                    }
+                },
+                "WindowSignCount": {
+                    "type": "object",
+                    "required": ["limit", "used", "window_secs"],
+                    "properties": {
+                        "limit": { "type": "integer", "minimum": 0 },
+                        "used": { "type": "integer", "minimum": 0 },
+                        "window_secs": { "type": "integer", "minimum": 1 }
+                    }
+                },
                 "Error": {
                     "type": "object",
                     "required": ["error"],
@@ -307,6 +495,40 @@ fn signed_responses() -> Value {
     })
 }
 
+fn policy_list_responses() -> Value {
+    json!({
+        "200": {
+            "description": "Effective policy snapshots and live usage counters.",
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "type": "array",
+                        "items": { "$ref": "#/components/schemas/PolicySnapshot" }
+                    }
+                }
+            }
+        },
+        "401": { "$ref": "#/components/responses/Unauthorized" },
+        "500": { "$ref": "#/components/responses/InternalError" }
+    })
+}
+
+fn policy_get_responses() -> Value {
+    json!({
+        "200": {
+            "description": "Effective policy snapshot and live usage counters.",
+            "content": {
+                "application/json": {
+                    "schema": { "$ref": "#/components/schemas/PolicySnapshot" }
+                }
+            }
+        },
+        "401": { "$ref": "#/components/responses/Unauthorized" },
+        "404": { "$ref": "#/components/responses/NotFound" },
+        "500": { "$ref": "#/components/responses/InternalError" }
+    })
+}
+
 fn admin_responses() -> Value {
     json!({
         "200": {
@@ -320,6 +542,46 @@ fn admin_responses() -> Value {
         "401": { "$ref": "#/components/responses/Unauthorized" },
         "404": { "$ref": "#/components/responses/NotFound" },
         "500": { "$ref": "#/components/responses/InternalError" }
+    })
+}
+
+fn admin_policy_mutation_responses() -> Value {
+    json!({
+        "200": {
+            "description": "Policy overlay was updated and effective policy was reloaded.",
+            "content": {
+                "application/json": {
+                    "schema": { "$ref": "#/components/schemas/PolicySnapshot" }
+                }
+            }
+        },
+        "400": { "$ref": "#/components/responses/BadRequest" },
+        "401": { "$ref": "#/components/responses/Unauthorized" },
+        "404": { "$ref": "#/components/responses/NotFound" },
+        "500": { "$ref": "#/components/responses/InternalError" }
+    })
+}
+
+fn key_policy_properties() -> Value {
+    json!({
+        "enabled": { "type": "boolean" },
+        "max_signs_per_minute": { "type": ["integer", "null"], "minimum": 0 },
+        "max_signs_per_hour": { "type": ["integer", "null"], "minimum": 0 },
+        "max_signs_per_day": { "type": ["integer", "null"], "minimum": 0 },
+        "daily_cap_lamports": { "type": ["string", "null"] },
+        "per_tx_cap_lamports": { "type": ["string", "null"] },
+        "allowed_programs": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/AllowedProgram" }
+        },
+        "allowed_messages": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/AllowedMessage" }
+        },
+        "allowed_recipients": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/AllowedRecipient" }
+        }
     })
 }
 
