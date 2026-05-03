@@ -48,6 +48,7 @@ fn example_config_deserializes_and_validates_with_real_secret_paths() {
 fn ci_paths_cover_behavior_affecting_files() {
     for pattern in [
         ".cargo/**",
+        ".agents/**",
         ".github/workflows/**",
         "src/**",
         "tests/**",
@@ -75,6 +76,7 @@ fn documented_source_files_exist() {
         "docs/broadcast-e2e.md",
         "deploy/README.md",
         "openapi/openkms.v1.json",
+        ".agents/skills/openkms/SKILL.md",
         "website/src/content/docs/overview.md",
         "website/src/content/docs/guides/quick-start.md",
         "website/src/content/docs/concepts/security-model.md",

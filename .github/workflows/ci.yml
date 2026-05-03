@@ -9,6 +9,7 @@ on:
   push:
     paths:
       - ".cargo/**"
+      - ".agents/**"
       - ".github/workflows/**"
       - "Cargo.toml"
       - "Cargo.lock"

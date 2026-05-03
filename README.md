@@ -37,6 +37,8 @@ Operator runbooks remain at stable repository paths:
 
 The canonical example configuration is [`examples/config.toml`](examples/config.toml).
 The generated HTTP API spec is [`openapi/openkms.v1.json`](openapi/openkms.v1.json).
+An AgentSkills-compatible OpenKMS operating guide for OpenClaw and other agents
+is committed at [`.agents/skills/openkms/SKILL.md`](.agents/skills/openkms/SKILL.md).
 
 ## Quick Start
 

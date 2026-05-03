@@ -26,6 +26,18 @@ by key label, but the `openkms run` binary does not currently wire that to
 `SIGHUP` or another live reload hook. Edit the TOML and restart the service to
 apply changes.
 
+Admin API policy overlays are the exception for per-key operating limits. Server,
+HSM, chain, and baseline key configuration stay in `config.toml`; trusted admin
+workflows can apply partial policy overlays through
+`PATCH /admin/keys/{label}/policy`. These overlays are persisted under
+`state_dir`, survive restarts, and are merged over the config baseline before the
+policy engine evaluates signing requests.
+
+Signer agents can read `GET /policy/{label}` to see the effective policy and
+live counters before they ask for a signature. Admin agents can read
+`GET /admin/keys/{label}/policy` to also see whether the effective policy came
+from config alone or from config plus an overlay.
+
 Use the admin API as the kill switch:
 
 ```bash
