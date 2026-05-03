@@ -22,7 +22,7 @@
 
 use std::{
     num::NonZeroUsize,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
     time::Duration,
 };
 
@@ -69,7 +69,7 @@ impl ReplayCache {
 
     /// Look up a cached response if the entry is still within the TTL window.
     pub fn get(&self, key: &DigestHash) -> Option<CachedResponse> {
-        let mut guard = self.inner.lock().expect("replay cache poisoned");
+        let mut guard = self.lock();
         match guard.get(key) {
             Some(entry) if entry.inserted_at.elapsed() <= self.ttl => Some(entry.response.clone()),
             Some(_) => {
@@ -82,7 +82,7 @@ impl ReplayCache {
     }
 
     pub fn insert(&self, key: DigestHash, response: CachedResponse) {
-        let mut guard = self.inner.lock().expect("replay cache poisoned");
+        let mut guard = self.lock();
         guard.put(
             key,
             Entry {
@@ -94,11 +94,17 @@ impl ReplayCache {
 
     /// Current cache size (for metrics / introspection).
     pub fn len(&self) -> usize {
-        self.inner.lock().expect("replay cache poisoned").len()
+        self.lock().len()
     }
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    fn lock(&self) -> MutexGuard<'_, lru::LruCache<DigestHash, Entry>> {
+        self.inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
 
