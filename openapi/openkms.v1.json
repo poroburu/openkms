@@ -1,0 +1,554 @@
+{
+  "components": {
+    "responses": {
+      "BadRequest": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "description": "Request payload could not be decoded or validated."
+      },
+      "Forbidden": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "description": "Policy denied the request."
+      },
+      "InternalError": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "description": "Internal server or HSM error."
+      },
+      "NotFound": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "description": "Requested key label was not found."
+      },
+      "RateLimited": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "description": "Rate-limit policy denied the request."
+      },
+      "Unauthorized": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "description": "Bearer token is missing or invalid."
+      }
+    },
+    "schemas": {
+      "AdminKeyResponse": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "CosmosSignRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_chain_id": {
+            "description": "Must match the chain_id inside the decoded SignDoc.",
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "sign_doc_b64": {
+            "description": "Base64-encoded cosmos.tx.v1beta1.SignDoc.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "sign_doc_b64",
+          "expected_chain_id"
+        ],
+        "type": "object"
+      },
+      "Error": {
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      },
+      "Health": {
+        "properties": {
+          "hsm_up": {
+            "description": "Null on the first response after process start; boolean thereafter.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "status": {
+            "const": "ok",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "hsm_up"
+        ],
+        "type": "object"
+      },
+      "KeySummary": {
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "chain": {
+            "enum": [
+              "solana",
+              "cosmos",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "derivation_path": {
+            "examples": [
+              "m/44'/118'/0'/0/0"
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "object_id": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "label",
+          "chain",
+          "address",
+          "enabled",
+          "object_id",
+          "derivation_path"
+        ],
+        "type": "object"
+      },
+      "SignResponse": {
+        "properties": {
+          "signature_b64": {
+            "description": "Base64-encoded 64-byte signature.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signature_b64"
+        ],
+        "type": "object"
+      },
+      "SolanaAddressLookupTable": {
+        "additionalProperties": false,
+        "properties": {
+          "addresses": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "addresses"
+        ],
+        "type": "object"
+      },
+      "SolanaSignRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "address_lookup_tables": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SolanaAddressLookupTable"
+            },
+            "type": "array"
+          },
+          "expected_chain_id": {
+            "description": "Optional audit/log context; Solana messages do not embed chain id.",
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "message_b64": {
+            "description": "Base64-encoded Solana VersionedMessage.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "message_b64"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "adminBearer": {
+        "description": "Bearer token loaded from admin_token_file.",
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "signerBearer": {
+        "description": "Bearer token loaded from signer_token_file.",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "YubiHSM2-backed transaction signer for Cosmos and Solana.",
+    "title": "openKMS HTTP API",
+    "version": "0.1.0-rc.1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/admin/keys/{label}/disable": {
+      "post": {
+        "operationId": "disableKey",
+        "parameters": [
+          {
+            "description": "Configured key label.",
+            "in": "path",
+            "name": "label",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminKeyResponse"
+                }
+              }
+            },
+            "description": "Key enabled state was updated."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ],
+        "summary": "Disable a configured key",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/keys/{label}/enable": {
+      "post": {
+        "operationId": "enableKey",
+        "parameters": [
+          {
+            "description": "Configured key label.",
+            "in": "path",
+            "name": "label",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminKeyResponse"
+                }
+              }
+            },
+            "description": "Key enabled state was updated."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ],
+        "summary": "Enable a configured key",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "The service is reachable."
+          }
+        },
+        "summary": "Report service and HSM health",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/keys": {
+      "get": {
+        "operationId": "listKeys",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/KeySummary"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Configured keys with derived addresses and enabled state."
+          }
+        },
+        "summary": "List configured signing keys",
+        "tags": [
+          "keys"
+        ]
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "getMetrics",
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "examples": [
+                    "openkms_signs_total{chain=\"solana\",label=\"solana-hot-0\",result=\"allow\"} 1"
+                  ],
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Prometheus text exposition."
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "summary": "Expose Prometheus metrics",
+        "tags": [
+          "metrics"
+        ]
+      }
+    },
+    "/sign/cosmos": {
+      "post": {
+        "operationId": "signCosmos",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CosmosSignRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignResponse"
+                }
+              }
+            },
+            "description": "Signature produced or returned from replay cache."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "signerBearer": []
+          }
+        ],
+        "summary": "Sign a Cosmos SDK SignDoc",
+        "tags": [
+          "signing"
+        ]
+      }
+    },
+    "/sign/solana": {
+      "post": {
+        "operationId": "signSolana",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SolanaSignRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignResponse"
+                }
+              }
+            },
+            "description": "Signature produced or returned from replay cache."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "signerBearer": []
+          }
+        ],
+        "summary": "Sign a Solana VersionedMessage",
+        "tags": [
+          "signing"
+        ]
+      }
+    }
+  },
+  "servers": [
+    {
+      "description": "Default loopback deployment",
+      "url": "http://127.0.0.1:9443"
+    }
+  ],
+  "tags": [
+    {
+      "name": "health"
+    },
+    {
+      "name": "keys"
+    },
+    {
+      "name": "signing"
+    },
+    {
+      "name": "admin"
+    },
+    {
+      "name": "metrics"
+    }
+  ]
+}

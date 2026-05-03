@@ -18,6 +18,8 @@ on:
       - "scripts/**"
       - "docs/**"
       - "deploy/**"
+      - "openapi/**"
+      - "website/**"
       - "README.md"
       - "LICENSE"
   workflow_dispatch:
@@ -69,10 +71,49 @@ jobs:
       - name: Run tests (ignored remote shell test runs in its own job)
         run: cargo test --all-targets
 
+  docs:
+    name: Docs + website
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2.9.1
+        with:
+          shared-key: openkms
+
+      - name: Build rustdoc with warnings denied
+        run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
+
+      - name: Check generated OpenAPI drift
+        run: |
+          cargo run --bin generate_openapi > /tmp/openkms.v1.json
+          diff -u openapi/openkms.v1.json /tmp/openkms.v1.json
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Install website dependencies
+        working-directory: website
+        run: npm ci
+
+      - name: Build website
+        working-directory: website
+        run: npm run build
+
   remote-e2e-job-shell:
     name: Remote E2E job script (mock signer)
     runs-on: ubuntu-latest
-    needs: test
+    needs: docs
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

@@ -1,0 +1,31 @@
+---
+title: Testing And Automation
+description: Local test commands, CI lanes, and live smoke-test runbooks.
+---
+
+Run the default test suite without hardware:
+
+```bash
+cargo test --all-targets
+```
+
+Run the integration tests explicitly:
+
+```bash
+cargo test --test integration
+```
+
+Hardware tests are opt-in and intentionally strict once enabled:
+
+```bash
+OPENKMS_HARDWARE_TESTS=1 cargo test --test integration -- --ignored
+```
+
+## Automation Lanes
+
+- [`ci.yml`](https://github.com/poroburu/openkms/blob/main/.github/workflows/ci.yml) runs formatting, clippy, tests, docs drift checks, rustdoc, OpenAPI drift checks, and website build checks.
+- [`remote-e2e.yml`](https://github.com/poroburu/openkms/blob/main/.github/workflows/remote-e2e.yml) is a manual staging smoke test against a deployed signer. The runbook is [`docs/remote-e2e.md`](https://github.com/poroburu/openkms/blob/main/docs/remote-e2e.md).
+- [`broadcast-e2e.yml`](https://github.com/poroburu/openkms/blob/main/.github/workflows/broadcast-e2e.yml) is a manual live testnet broadcast gate. The runbook is [`docs/broadcast-e2e.md`](https://github.com/poroburu/openkms/blob/main/docs/broadcast-e2e.md).
+
+The E2E wrapper scripts share Solana and Cosmos default resolution through
+[`scripts/e2e_defaults.sh`](https://github.com/poroburu/openkms/blob/main/scripts/e2e_defaults.sh).

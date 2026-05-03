@@ -7,6 +7,7 @@ pub mod config;
 pub mod derive;
 pub mod hsm;
 pub mod metrics;
+pub mod openapi;
 pub mod policy;
 pub mod replay;
 pub mod server;

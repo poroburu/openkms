@@ -183,7 +183,7 @@ impl Config {
         Ok(s.trim_end_matches(['\n', '\r', ' ', '\t']).to_string())
     }
 
-    /// Same permission rules as [`read_secret_file`], but returns raw password
+    /// Same permission rules as [`Self::read_secret_file`], but returns raw password
     /// **bytes** for the YubiHSM login:
     ///
     /// - If the trimmed contents are **64 ASCII hex digits**, decode to 32 bytes

@@ -10,7 +10,7 @@
 //! ```
 //!
 //! Design notes:
-//!   * A single HSM is shared across all routes via `Hsm` (Arc<Mutex<Client>>).
+//!   * A single HSM is shared across all routes via `Hsm` (`Arc<Mutex<Client>>`).
 //!   * Per-key signer handles (`SolanaSigner`, `CosmosSigner`) are pre-built
 //!     at startup with the key's pubkey so we don't hit the HSM during decode.
 //!   * The replay cache is keyed on sha256(signing_digest). See `replay.rs`

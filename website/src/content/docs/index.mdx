@@ -1,0 +1,48 @@
+---
+title: openKMS
+description: YubiHSM2-backed transaction signing for Cosmos and Solana.
+template: splash
+hero:
+  tagline: YubiHSM2-backed transaction signing for Cosmos and Solana.
+  image:
+    file: ../../../public/favicon.svg
+  actions:
+    - text: Start signing
+      link: /guides/quick-start/
+      icon: right-arrow
+    - text: Read the HTTP API
+      link: /reference/http-api/
+      variant: secondary
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+openKMS is a small, deny-by-default signing service for operators who want
+hardware-backed keys without handing raw private material to trading agents or
+automation.
+
+<CardGrid>
+  <Card title="HSM-only signing">
+    Signing keys live in a YubiHSM2. The service signs through the HSM and never
+    emits private key material.
+  </Card>
+  <Card title="Policy before signature">
+    Per-key rate limits, spend caps, allowlists, and a kill switch guard every
+    signing request.
+  </Card>
+  <Card title="Operator friendly">
+    Systemd units, remote smoke tests, testnet broadcast checks, and Prometheus
+    metrics are documented together.
+  </Card>
+  <Card title="Checked API docs">
+    The HTTP API reference points at a generated OpenAPI spec that is checked in
+    CI for drift.
+  </Card>
+</CardGrid>
+
+## Where To Start
+
+- New operators should begin with [Quick Start](/openkms/guides/quick-start/).
+- Security reviewers should read the [Security Model](/openkms/concepts/security-model/).
+- Integrators should use the [HTTP API reference](/openkms/reference/http-api/).
+- Deployment work belongs in [Deployment](/openkms/operations/deployment/).

@@ -25,3 +25,8 @@ killswitch.json
 *.swp
 .idea/
 .vscode/
+
+# Website build artifacts
+/website/node_modules/
+/website/dist/
+/website/.astro/

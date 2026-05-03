@@ -103,7 +103,7 @@ impl PolicyError {
 
 /// Default policy engine.
 ///
-/// Stores one [`KeyState`] per configured key label. The HashMap is replaced
+/// Stores one `KeyState` per configured key label. The HashMap is replaced
 /// wholesale on hot-reload; per-key mutable state (daily-spend counters,
 /// enable flag) survives so long as the key label still exists.
 pub struct DefaultPolicyEngine {

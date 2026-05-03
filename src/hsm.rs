@@ -275,14 +275,14 @@ pub mod ids {
 /// installed during the `openkms setup` command (while authenticated as the
 /// factory default auth key, or when re-provisioning after a full device reset).
 ///
-/// Must include [`Capability::RESET_DEVICE`]: when setup reconnects using
+/// Must include `Capability::RESET_DEVICE`: when setup reconnects using
 /// provisioner recovery (slot 1 empty, auth key #2 present), this session must
 /// be allowed to run [`yubihsm::Client::reset_device`]. The upstream `yubihsm`
 /// crate logs send failures at debug level only, so missing this permission
 /// surfaces as “auth key not found” for slot 1 after an apparent reset.
 ///
-/// Must include [`Capability::GENERATE_ASYMMETRIC_KEY`] for [`generate_asymmetric_key`]
-/// (`keys generate`); [`Capability::PUT_ASYMMETRIC_KEY`] alone covers only import (`keys provision`).
+/// Must include `Capability::GENERATE_ASYMMETRIC_KEY` for `generate_asymmetric_key`
+/// (`keys generate`); `Capability::PUT_ASYMMETRIC_KEY` alone covers only import (`keys provision`).
 pub fn provisioner_auth_capabilities_setup() -> yubihsm::Capability {
     use yubihsm::Capability as C;
     C::GENERATE_ASYMMETRIC_KEY
