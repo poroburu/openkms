@@ -21,22 +21,52 @@ openKMS is a small, deny-by-default signing service for operators who want
 hardware-backed keys without handing raw private material to trading agents or
 automation.
 
+<div className="system-flow" aria-label="openKMS signing flow">
+  <div className="flow-node">
+    <span className="flow-label">Agent</span>
+    <span className="flow-detail">builds tx</span>
+  </div>
+  <span className="flow-arrow" aria-hidden="true">→</span>
+  <div className="flow-node flow-node-strong">
+    <span className="flow-label">Policy</span>
+    <span className="flow-detail">caps, allowlists, kill switch</span>
+  </div>
+  <span className="flow-arrow" aria-hidden="true">→</span>
+  <div className="flow-node">
+    <span className="flow-label">YubiHSM2</span>
+    <span className="flow-detail">signs inside hardware</span>
+  </div>
+  <span className="flow-arrow" aria-hidden="true">→</span>
+  <div className="flow-node">
+    <span className="flow-label">Signature</span>
+    <span className="flow-detail">no raw keys</span>
+  </div>
+</div>
+
+## Who This Is For
+
+openKMS is for solo operators and small teams running automated strategies,
+validators, treasury bots, or backend jobs that need hot signing without hot
+private keys. It assumes you can operate a hardened Linux host, keep a ceremony
+mnemonic offline, and treat policy as the boundary between automation and funds.
+
 <CardGrid>
-  <Card title="HSM-only signing">
-    Signing keys live in a YubiHSM2. The service signs through the HSM and never
-    emits private key material.
+  <Card title="Keys never leave hardware">
+    Signing keys live in a YubiHSM2. openKMS returns signatures, not private key
+    material.
   </Card>
-  <Card title="Policy before signature">
-    Per-key rate limits, spend caps, allowlists, and a kill switch guard every
-    signing request.
+  <Card title="Policy before every signature">
+    Per-key rate limits, spend caps, allowlists, and an admin kill switch guard
+    each request before the HSM is touched.
   </Card>
-  <Card title="Operator friendly">
+  <Card title="Built for small operators">
     Systemd units, remote smoke tests, testnet broadcast checks, and Prometheus
     metrics are documented together.
   </Card>
-  <Card title="Checked API docs">
-    The HTTP API reference points at a generated OpenAPI spec that is checked in
-    CI for drift.
+  <Card title="OpenAPI and docs stay checked">
+    The HTTP API reference points at a generated OpenAPI spec that CI checks for
+    drift. Download the spec from
+    [`openapi/openkms.v1.json`](https://github.com/poroburu/openkms/blob/main/openapi/openkms.v1.json).
   </Card>
 </CardGrid>
 
