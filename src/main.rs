@@ -4,6 +4,10 @@
 //! paths work against the real device (via `yubihsm-connector`), a USB-attached
 //! YubiHSM2, or the in-process mockhsm used by tests and local development.
 
+mod cli_backup;
+mod cli_ceremony;
+mod cli_keys;
+
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -12,11 +16,10 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow, bail};
-use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use clap::{Parser, Subcommand, ValueEnum};
 use openkms::{
     audit::AuditLog,
-    chain::{Chain, cosmos::CosmosSigner, solana::SolanaSigner},
+    chain::Chain,
     config::Config,
     derive::{self, SEED_LEN, mnemonic_from_entropy, mnemonic_to_seed},
     hsm::{Hsm, hsm_types as H, ids, provisioner_auth_capabilities_setup},
@@ -71,19 +74,19 @@ enum Command {
     /// Key management subcommands.
     Keys {
         #[command(subcommand)]
-        cmd: KeysCommand,
+        cmd: cli_keys::KeysCommand,
     },
 
     /// Back up all configured signing keys to a single wrap-encrypted blob.
-    Backup(BackupArgs),
+    Backup(cli_backup::BackupArgs),
 
     /// Restore a previously-made backup blob on a fresh HSM.
-    Restore(RestoreArgs),
+    Restore(cli_backup::RestoreArgs),
 
     /// Print mnemonic-derived ceremony secrets (operator tooling).
     Ceremony {
         #[command(subcommand)]
-        cmd: CeremonyCommand,
+        cmd: cli_ceremony::CeremonyCommand,
     },
 
     /// Run the signing service.
@@ -105,117 +108,8 @@ struct SetupArgs {
     passphrase_file: Option<PathBuf>,
 }
 
-#[derive(Subcommand, Debug)]
-enum KeysCommand {
-    /// List configured keys + their object IDs / addresses.
-    List,
-
-    /// Print the on-chain address for a configured key.
-    Address {
-        #[arg(long)]
-        label: String,
-    },
-
-    /// Generate a new asymmetric key inside the HSM (Path A).
-    Generate {
-        #[arg(long)]
-        label: String,
-        #[arg(long, value_enum)]
-        chain: ChainArg,
-        #[arg(long, value_parser = parse_key_object_id)]
-        object_id: u16,
-        /// If set, authenticate as provisioner (#2) derived from this mnemonic — required for
-        /// key creation unless you use `--auth-key-id 2` and a provisioner password elsewhere.
-        #[arg(long)]
-        mnemonic_file: Option<PathBuf>,
-        #[arg(long)]
-        passphrase_file: Option<PathBuf>,
-    },
-
-    /// Derive a key from the ceremony mnemonic + BIP-32 / SLIP-10 path and
-    /// import it into the HSM (Path B).
-    Provision {
-        #[arg(long)]
-        label: String,
-        #[arg(long, value_enum)]
-        chain: ChainArg,
-        #[arg(long, value_parser = parse_key_object_id)]
-        object_id: u16,
-        /// BIP-32 / SLIP-10 derivation path, e.g. `m/44'/118'/0'/0/0` for
-        /// Cosmos or `m/44'/501'/0'/0'` for Solana.
-        #[arg(long)]
-        path: String,
-        /// Mnemonic file (see `openkms setup --mnemonic-file`).
-        #[arg(long)]
-        mnemonic_file: PathBuf,
-        /// Optional BIP-39 passphrase file.
-        #[arg(long)]
-        passphrase_file: Option<PathBuf>,
-    },
-
-    /// Export a key wrapped under the current wrap key.
-    Export {
-        #[arg(long, value_parser = parse_key_object_id)]
-        object_id: u16,
-        #[arg(long)]
-        out: PathBuf,
-    },
-
-    /// Import a key previously exported with `Export`.
-    Import {
-        #[arg(long)]
-        in_: PathBuf,
-    },
-}
-
-#[derive(clap::Args, Debug)]
-struct BackupArgs {
-    #[arg(long)]
-    out: PathBuf,
-}
-
-#[derive(clap::Args, Debug)]
-struct RestoreArgs {
-    #[arg(long = "in")]
-    in_: PathBuf,
-}
-
-#[derive(Subcommand, Debug)]
-enum CeremonyCommand {
-    /// Print 64 hex chars for `hsm-password` after `setup` (signer auth key #3).
-    #[command(name = "print-signer-password")]
-    SignerPassword(CeremonyMnemonicArgs),
-    /// Print 64 hex chars for the provisioner auth key #2 (key management: generate / export / import).
-    #[command(name = "print-provisioner-password")]
-    ProvisionerPassword(CeremonyMnemonicArgs),
-    /// Print base64 env lines for `generate_remote_e2e_request` (same mnemonic + paths as `keys provision`).
-    #[command(name = "print-derived-signing-secrets")]
-    DerivedSigningSecrets(CeremonyDerivedSigningArgs),
-}
-
-#[derive(clap::Args, Debug)]
-struct CeremonyDerivedSigningArgs {
-    #[command(flatten)]
-    mnemonic: CeremonyMnemonicArgs,
-    /// SLIP-10 path for Solana (must match `keys provision`, e.g. `m/44'/501'/0'/0'`).
-    #[arg(long)]
-    solana_path: Option<String>,
-    /// BIP-32 path for Cosmos secp256k1 (must match `keys provision`, e.g. `m/44'/118'/0'/0/0`).
-    #[arg(long)]
-    cosmos_path: Option<String>,
-}
-
-#[derive(clap::Args, Debug)]
-struct CeremonyMnemonicArgs {
-    #[arg(long)]
-    mnemonic_file: PathBuf,
-    /// Optional BIP-39 passphrase file — must match what you passed to `setup`.
-    #[arg(long)]
-    passphrase_file: Option<PathBuf>,
-}
-
 #[derive(Copy, Clone, Debug, ValueEnum)]
-enum ChainArg {
+pub(crate) enum ChainArg {
     Solana,
     Cosmos,
 }
@@ -251,16 +145,16 @@ async fn main() -> Result<()> {
         Command::NewMnemonic => new_mnemonic(&ctx).await,
         Command::Setup(args) => setup(&ctx, args).await,
         Command::Test => test_cmd(&ctx).await,
-        Command::Keys { cmd } => keys_dispatch(&ctx, cmd).await,
-        Command::Backup(a) => backup(&ctx, a).await,
-        Command::Restore(a) => restore(&ctx, a).await,
-        Command::Ceremony { cmd } => ceremony_dispatch(cmd).await,
+        Command::Keys { cmd } => cli_keys::dispatch(&ctx, cmd).await,
+        Command::Backup(a) => cli_backup::backup(&ctx, a).await,
+        Command::Restore(a) => cli_backup::restore(&ctx, a).await,
+        Command::Ceremony { cmd } => cli_ceremony::dispatch(cmd).await,
         Command::Run => run_service(&ctx).await,
     }
 }
 
 #[derive(Debug)]
-struct CliCtx {
+pub(crate) struct CliCtx {
     config: PathBuf,
     connector: Option<String>,
     auth_key_id: Option<u16>,
@@ -553,283 +447,6 @@ async fn test_cmd(cli: &CliCtx) -> Result<()> {
     Ok(())
 }
 
-// ---- keys subcommands ----
-
-async fn keys_dispatch(cli: &CliCtx, cmd: KeysCommand) -> Result<()> {
-    match cmd {
-        KeysCommand::List => keys_list(cli).await,
-        KeysCommand::Address { label } => keys_address(cli, &label).await,
-        KeysCommand::Generate {
-            label,
-            chain,
-            object_id,
-            mnemonic_file,
-            passphrase_file,
-        } => {
-            keys_generate(
-                cli,
-                &label,
-                chain.into(),
-                object_id,
-                mnemonic_file.as_deref(),
-                passphrase_file.as_deref(),
-            )
-            .await
-        }
-        KeysCommand::Provision {
-            label,
-            chain,
-            object_id,
-            path,
-            mnemonic_file,
-            passphrase_file,
-        } => {
-            keys_provision(
-                cli,
-                &label,
-                chain.into(),
-                object_id,
-                &path,
-                &mnemonic_file,
-                passphrase_file.as_deref(),
-            )
-            .await
-        }
-        KeysCommand::Export { object_id, out } => keys_export(cli, object_id, &out).await,
-        KeysCommand::Import { in_ } => keys_import(cli, &in_).await,
-    }
-}
-
-async fn keys_list(cli: &CliCtx) -> Result<()> {
-    let cfg = Config::load(&cli.config)?;
-    for k in &cfg.keys {
-        println!(
-            "{:<24}  chain={:<8}  object_id=0x{:04x}  path={}",
-            k.label,
-            k.chain.as_str(),
-            k.object_id,
-            k.derivation_path.clone().unwrap_or_else(|| "-".into())
-        );
-    }
-    Ok(())
-}
-
-async fn keys_address(cli: &CliCtx, label: &str) -> Result<()> {
-    let cfg = Config::load(&cli.config)?;
-    let key = cfg
-        .keys
-        .iter()
-        .find(|k| k.label == label)
-        .ok_or_else(|| anyhow!("no key labelled {label:?}"))?;
-    let hsm = open_hsm(cli).await?;
-    match key.chain {
-        Chain::Solana => {
-            let s = SolanaSigner::from_hsm(&hsm, key).await?;
-            println!("{}", s.address);
-        }
-        Chain::Cosmos => {
-            let s = CosmosSigner::from_hsm(
-                &hsm,
-                key,
-                cfg.cosmos.accepted_pubkey_type_urls.iter().cloned(),
-            )
-            .await?;
-            println!("{}", s.default_address);
-        }
-        Chain::Unknown => bail!("unknown chain for key {label:?}"),
-    }
-    Ok(())
-}
-
-async fn keys_generate(
-    cli: &CliCtx,
-    label: &str,
-    chain: Chain,
-    object_id: u16,
-    mnemonic_file: Option<&Path>,
-    passphrase_file: Option<&Path>,
-) -> Result<()> {
-    let hsm = if let Some(path) = mnemonic_file {
-        let phrase = fs::read_to_string(path)?;
-        let passphrase = read_optional_file(passphrase_file)?.unwrap_or_default();
-        let seed = mnemonic_to_seed(phrase.trim(), &passphrase)?;
-        let seed_arr = seed_to_fixed(seed.as_slice());
-        open_hsm_as_provisioner_with_seed(cli, &seed_arr)?
-    } else {
-        open_hsm(cli).await?
-    };
-    let client = hsm.client();
-    let guard = client.lock().await;
-    let (alg, caps) = match chain {
-        Chain::Solana => (H::AsymmetricAlg::Ed25519, H::Capability::SIGN_EDDSA),
-        Chain::Cosmos => (H::AsymmetricAlg::EcK256, H::Capability::SIGN_ECDSA),
-        Chain::Unknown => bail!("unknown chain"),
-    };
-    let caps = caps | H::Capability::EXPORTABLE_UNDER_WRAP;
-    let id = guard
-        .generate_asymmetric_key(
-            object_id,
-            H::ObjectLabel::from_str(label)?,
-            H::Domain::DOM1,
-            caps,
-            alg,
-        )
-        .map_err(|e| anyhow!("generate_asymmetric_key: {e}"))?;
-    println!("generated key object_id=0x{id:04x} algorithm={alg:?}");
-    Ok(())
-}
-
-async fn keys_provision(
-    cli: &CliCtx,
-    label: &str,
-    chain: Chain,
-    object_id: u16,
-    path: &str,
-    mnemonic_file: &Path,
-    passphrase_file: Option<&Path>,
-) -> Result<()> {
-    let phrase = fs::read_to_string(mnemonic_file)?;
-    let passphrase = read_optional_file(passphrase_file)?.unwrap_or_default();
-    let seed = mnemonic_to_seed(phrase.trim(), &passphrase)?;
-    let seed_arr = seed_to_fixed(seed.as_slice());
-
-    // Signing service uses auth key #3 (signer); provisioning requires PUT_ASYMMETRIC_KEY,
-    // which only the provisioner (#2) holds.
-    let hsm = open_hsm_as_provisioner_with_seed(cli, &seed_arr)?;
-
-    let (alg, caps, key_bytes): (H::AsymmetricAlg, H::Capability, Zeroizing<Vec<u8>>) = match chain
-    {
-        Chain::Solana => {
-            let sk = derive::derive_ed25519(&seed_arr, path)?;
-            (
-                H::AsymmetricAlg::Ed25519,
-                H::Capability::SIGN_EDDSA,
-                Zeroizing::new(sk.to_vec()),
-            )
-        }
-        Chain::Cosmos => {
-            let sk = derive::derive_secp256k1(&seed_arr, path)?;
-            (
-                H::AsymmetricAlg::EcK256,
-                H::Capability::SIGN_ECDSA,
-                Zeroizing::new(sk.to_vec()),
-            )
-        }
-        Chain::Unknown => bail!("unknown chain"),
-    };
-    let caps = caps | H::Capability::EXPORTABLE_UNDER_WRAP;
-    let client = hsm.client();
-    let guard = client.lock().await;
-    let id = guard
-        .put_asymmetric_key(
-            object_id,
-            H::ObjectLabel::from_str(label)?,
-            H::Domain::DOM1,
-            caps,
-            alg,
-            key_bytes.to_vec(),
-        )
-        .map_err(|e| anyhow!("put_asymmetric_key: {e}"))?;
-    println!("imported key object_id=0x{id:04x} path={path}");
-    Ok(())
-}
-
-async fn keys_export(cli: &CliCtx, object_id: u16, out: &Path) -> Result<()> {
-    let hsm = open_hsm(cli).await?;
-    let client = hsm.client();
-    let guard = client.lock().await;
-    let msg = guard
-        .export_wrapped(ids::WRAP_KEY_ID, H::ObjectType::AsymmetricKey, object_id)
-        .map_err(|e| anyhow!("export_wrapped: {e}"))?;
-    let serialized = serde_json::to_vec(&ExportedKey {
-        object_id,
-        nonce: B64.encode(msg.nonce.0.as_slice()),
-        ciphertext: B64.encode(&msg.ciphertext),
-    })?;
-    fs::write(out, serialized)?;
-    secure_perms(out)?;
-    println!("wrote {out:?}");
-    Ok(())
-}
-
-async fn keys_import(cli: &CliCtx, in_: &Path) -> Result<()> {
-    let bytes = fs::read(in_)?;
-    let parsed: ExportedKey = serde_json::from_slice(&bytes)?;
-    let hsm = open_hsm(cli).await?;
-    let client = hsm.client();
-    let guard = client.lock().await;
-    let nonce_bytes = B64.decode(parsed.nonce)?;
-    let ciphertext = B64.decode(parsed.ciphertext)?;
-    if nonce_bytes.len() != 13usize {
-        return Err(anyhow!("bad wrap nonce length: {}", nonce_bytes.len()));
-    }
-    let msg = H::wrap::Message {
-        nonce: H::wrap::Nonce::from(nonce_bytes.as_slice()),
-        ciphertext,
-    };
-    let handle = guard
-        .import_wrapped(ids::WRAP_KEY_ID, msg)
-        .map_err(|e| anyhow!("import_wrapped: {e}"))?;
-    println!(
-        "imported object_id=0x{:04x} type={:?}",
-        handle.object_id, handle.object_type
-    );
-    Ok(())
-}
-
-#[derive(serde::Serialize, serde::Deserialize)]
-struct ExportedKey {
-    object_id: u16,
-    nonce: String,
-    ciphertext: String,
-}
-
-async fn backup(cli: &CliCtx, args: BackupArgs) -> Result<()> {
-    let cfg = Config::load(&cli.config)?;
-    let hsm = open_hsm(cli).await?;
-    let client = hsm.client();
-    let guard = client.lock().await;
-    let mut exported = Vec::new();
-    for k in &cfg.keys {
-        let msg = guard
-            .export_wrapped(ids::WRAP_KEY_ID, H::ObjectType::AsymmetricKey, k.object_id)
-            .map_err(|e| anyhow!("export_wrapped({:?}): {e}", k.label))?;
-        exported.push(ExportedKey {
-            object_id: k.object_id,
-            nonce: B64.encode(msg.nonce.0.as_slice()),
-            ciphertext: B64.encode(&msg.ciphertext),
-        });
-    }
-    fs::write(&args.out, serde_json::to_vec_pretty(&exported)?)?;
-    secure_perms(&args.out)?;
-    println!("backed up {} keys to {:?}", exported.len(), args.out);
-    Ok(())
-}
-
-async fn restore(cli: &CliCtx, args: RestoreArgs) -> Result<()> {
-    let bytes = fs::read(&args.in_)?;
-    let parsed: Vec<ExportedKey> = serde_json::from_slice(&bytes)?;
-    let hsm = open_hsm(cli).await?;
-    let client = hsm.client();
-    let guard = client.lock().await;
-    for k in parsed {
-        let nonce_bytes = B64.decode(&k.nonce)?;
-        let ciphertext = B64.decode(&k.ciphertext)?;
-        if nonce_bytes.len() != 13usize {
-            return Err(anyhow!("bad wrap nonce length: {}", nonce_bytes.len()));
-        }
-        let msg = H::wrap::Message {
-            nonce: H::wrap::Nonce::from(nonce_bytes.as_slice()),
-            ciphertext,
-        };
-        let handle = guard
-            .import_wrapped(ids::WRAP_KEY_ID, msg)
-            .map_err(|e| anyhow!("import_wrapped(0x{:04x}): {e}", k.object_id))?;
-        println!("restored 0x{:04x} -> {:?}", k.object_id, handle);
-    }
-    Ok(())
-}
-
 async fn run_service(cli: &CliCtx) -> Result<()> {
     let cfg = Config::load(&cli.config)?;
     let signer_token = Config::read_secret_file(&cfg.server.signer_token_file)?;
@@ -848,75 +465,6 @@ async fn run_service(cli: &CliCtx) -> Result<()> {
     let _ = AuditLog::open(&cfg.audit)?;
     let state = server::AppState::build(cfg, hsm, signer_token, admin_token).await?;
     server::serve(state).await
-}
-
-async fn ceremony_dispatch(cmd: CeremonyCommand) -> Result<()> {
-    match cmd {
-        CeremonyCommand::SignerPassword(args) => ceremony_print_signer_password(&args),
-        CeremonyCommand::ProvisionerPassword(args) => ceremony_print_provisioner_password(&args),
-        CeremonyCommand::DerivedSigningSecrets(args) => {
-            ceremony_print_derived_signing_secrets(&args)
-        }
-    }
-}
-
-fn ceremony_print_signer_password(args: &CeremonyMnemonicArgs) -> Result<()> {
-    let phrase = fs::read_to_string(&args.mnemonic_file)
-        .with_context(|| format!("read {:?}", args.mnemonic_file))?;
-    let passphrase = read_optional_file(args.passphrase_file.as_deref())?.unwrap_or_default();
-    let seed = mnemonic_to_seed(phrase.trim(), &passphrase)?;
-    let secrets = derive::derive_ceremony(&seed_to_fixed(seed.as_slice()));
-    println!("{}", hex::encode(secrets.signer_password.as_slice()));
-    eprintln!(
-        "Put this single line in [hsm].password_file (0600), with auth_key_id 3, after `setup`."
-    );
-    Ok(())
-}
-
-fn ceremony_print_provisioner_password(args: &CeremonyMnemonicArgs) -> Result<()> {
-    let phrase = fs::read_to_string(&args.mnemonic_file)
-        .with_context(|| format!("read {:?}", args.mnemonic_file))?;
-    let passphrase = read_optional_file(args.passphrase_file.as_deref())?.unwrap_or_default();
-    let seed = mnemonic_to_seed(phrase.trim(), &passphrase)?;
-    let secrets = derive::derive_ceremony(&seed_to_fixed(seed.as_slice()));
-    println!("{}", hex::encode(secrets.provisioner_password.as_slice()));
-    eprintln!(
-        "Use with `--auth-key-id {}` for `keys generate`, `keys export`, and `keys import` \
-         (not for `openkms run`, which should use the signer at #3).",
-        ids::PROVISIONER_AUTH_KEY_ID
-    );
-    Ok(())
-}
-
-fn ceremony_print_derived_signing_secrets(args: &CeremonyDerivedSigningArgs) -> Result<()> {
-    if args.solana_path.is_none() && args.cosmos_path.is_none() {
-        bail!("pass at least one of --solana-path or --cosmos-path");
-    }
-    let phrase = fs::read_to_string(&args.mnemonic.mnemonic_file)
-        .with_context(|| format!("read {:?}", args.mnemonic.mnemonic_file))?;
-    let passphrase =
-        read_optional_file(args.mnemonic.passphrase_file.as_deref())?.unwrap_or_default();
-    let seed = mnemonic_to_seed(phrase.trim(), &passphrase)?;
-    let seed_arr = seed_to_fixed(seed.as_slice());
-
-    if let Some(p) = args.solana_path.as_deref() {
-        let sk = derive::derive_ed25519(&seed_arr, p)?;
-        println!(
-            "OPENKMS_SOLANA_SIGNER_SEED_B64={}",
-            B64.encode(sk.as_slice())
-        );
-    }
-    if let Some(p) = args.cosmos_path.as_deref() {
-        let sk = derive::derive_secp256k1(&seed_arr, p)?;
-        println!(
-            "OPENKMS_COSMOS_SIGNER_SCALAR_B64={}",
-            B64.encode(sk.as_slice())
-        );
-    }
-    eprintln!(
-        "These are recomputed from the mnemonic (not read from the HSM); paths must match `keys provision`."
-    );
-    Ok(())
 }
 
 // ---------------------------------------------------------------------------
