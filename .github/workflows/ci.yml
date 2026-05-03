@@ -1,19 +1,25 @@
-# Fast repo checks. `lint` → `test` → `remote-e2e-job-shell` chain reuses rust-cache
-# via shared-key `openkms`. To exercise only the ignored shell test locally, run:
+# Fast repo checks. lint -> test -> remote-e2e-job-shell reuses rust-cache
+# via shared-key `openkms`. rust-cache pinned to v2.9.1 (`runs.using: node24`; upgrade
+# gh act if local runs fail to load the action).
+# To exercise only the ignored shell test locally, run:
 #   cargo test --test remote_e2e_job_shell -- --ignored --nocapture
 name: Repo Checks
 
 on:
   push:
     paths:
-      - ".github/workflows/ci.yml"
+      - ".cargo/**"
+      - ".github/workflows/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - "src/**"
       - "tests/**"
       - "examples/**"
-      - "scripts/run_remote_e2e_job.sh"
-      - "scripts/remote_e2e_smoke.sh"
+      - "scripts/**"
+      - "docs/**"
+      - "deploy/**"
+      - "README.md"
+      - "LICENSE"
   workflow_dispatch:
 
 env:
@@ -56,7 +62,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9.1
         with:
           shared-key: openkms
 
@@ -75,7 +81,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9.1
         with:
           shared-key: openkms
 
