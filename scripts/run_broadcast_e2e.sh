@@ -8,6 +8,10 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/e2e_defaults.sh"
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -42,8 +46,8 @@ Environment:
   Values from --env-file are loaded first; CLI flags above override afterward.
   Fund signers on the target clusters before running; tests do not use faucets
   (see docs/broadcast-e2e.md).
-  OPENKMS_COSMOS_CHAIN_REGISTRY_URL defaults to the Cosmos ICS Provider testnet
-  entry in chain-registry; override to point at another chain.json.
+  OPENKMS_COSMOS_CHAIN_REGISTRY_URL defaults to the shared Cosmos ICS Provider
+  testnet chain-registry entry; override to point at another chain.json.
 
 Examples:
   ./scripts/run_broadcast_e2e.sh solana --env-file ./.tmp/broadcast-keys
@@ -82,8 +86,7 @@ resolve_env_file_path() {
   fi
 }
 
-# Fill missing OPENKMS_COSMOS_* broadcast variables from chain-registry chain.json
-# (default: Cosmos ICS Provider testnet — same URL as generate_broadcast_key_material.sh).
+# Fill missing OPENKMS_COSMOS_* broadcast variables from the shared E2E defaults.
 apply_cosmos_chain_registry_defaults() {
   case "$TARGET" in
     cosmos | both) ;;
@@ -94,106 +97,27 @@ apply_cosmos_chain_registry_defaults() {
     return 0
   fi
 
-  command -v curl >/dev/null 2>&1 || {
-    echo "error: curl is required to fetch Cosmos chain-registry defaults" >&2
-    exit 1
-  }
-  command -v python3 >/dev/null 2>&1 || {
-    echo "error: python3 is required to parse chain-registry JSON" >&2
-    exit 1
-  }
-
-  local reg="${OPENKMS_COSMOS_CHAIN_REGISTRY_URL:-https://raw.githubusercontent.com/cosmos/chain-registry/master/testnets/cosmosicsprovidertestnet/chain.json}"
-  local gas="${OPENKMS_COSMOS_GAS_LIMIT:-200000}"
-
-  echo "note: fetching Cosmos broadcast defaults from chain-registry" >&2
-  local json
-  json="$(curl -fsSL "$reg")" || {
-    echo "error: could not download: $reg" >&2
-    exit 1
-  }
-
-  # Do not pipe JSON into `python3 - <<'PY'`: stdin is the script, not the payload.
-  local tmp
-  tmp="$(mktemp)" || exit 1
-  printf '%s\n' "$json" > "$tmp"
-
-  local outs
-  outs="$(python3 - "$tmp" "$gas" <<'PY'
-import json, math, sys
-
-with open(sys.argv[1], "r", encoding="utf-8") as f:
-    j = json.load(f)
-gas = int(sys.argv[2])
-
-rests = (j.get("apis") or {}).get("rest") or []
-if not rests:
-    raise SystemExit("chain.json: missing apis.rest")
-rest = str(rests[0].get("address") or "").strip()
-if not rest:
-    raise SystemExit("chain.json: empty apis.rest[0].address")
-
-fts = (j.get("fees") or {}).get("fee_tokens") or []
-if not fts:
-    raise SystemExit("chain.json: missing fees.fee_tokens")
-ft = fts[0]
-denom = str(ft.get("denom") or "").strip()
-if not denom:
-    raise SystemExit("chain.json: empty fee denom")
-
-price = None
-for key in ("average_gas_price", "low_gas_price", "high_gas_price", "fixed_min_gas_price"):
-    v = ft.get(key)
-    if v is not None and v != "":
-        price = float(v)
-        break
-if price is None:
-    price = 0.02
-
-amount = max(1, int(math.ceil(price * gas)))
-cid = str(j.get("chain_id") or "").strip()
-hrp = str(j.get("bech32_prefix") or "cosmos").strip()
-print(rest)
-print(denom)
-print(amount)
-print(cid)
-print(hrp)
-PY
-)" || {
-    rm -f "$tmp"
-    echo "error: failed to parse chain-registry JSON (see OPENKMS_COSMOS_CHAIN_REGISTRY_URL)" >&2
-    exit 1
-  }
-  rm -f "$tmp"
-
-  local -a lines=()
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    lines+=("${line//$'\r'/}")
-  done <<< "$outs"
-
-  if ((${#lines[@]} < 5)); then
-    echo "error: unexpected chain-registry parse output" >&2
-    exit 1
-  fi
+  local gas="${OPENKMS_COSMOS_GAS_LIMIT:-$OPENKMS_DEFAULT_COSMOS_GAS_LIMIT}"
+  openkms_fetch_cosmos_registry_defaults "$gas" || exit 1
 
   if [[ -z "${OPENKMS_COSMOS_REST_URL:-}" ]]; then
-    export OPENKMS_COSMOS_REST_URL="${lines[0]}"
+    export OPENKMS_COSMOS_REST_URL="$OPENKMS_FETCH_COSMOS_REST_URL"
     echo "note: OPENKMS_COSMOS_REST_URL unset; using ${OPENKMS_COSMOS_REST_URL}" >&2
   fi
   if [[ -z "${OPENKMS_COSMOS_FEE_DENOM:-}" ]]; then
-    export OPENKMS_COSMOS_FEE_DENOM="${lines[1]}"
+    export OPENKMS_COSMOS_FEE_DENOM="$OPENKMS_FETCH_COSMOS_FEE_DENOM"
     echo "note: OPENKMS_COSMOS_FEE_DENOM unset; using ${OPENKMS_COSMOS_FEE_DENOM}" >&2
   fi
   if [[ -z "${OPENKMS_COSMOS_FEE_AMOUNT:-}" ]]; then
-    export OPENKMS_COSMOS_FEE_AMOUNT="${lines[2]}"
+    export OPENKMS_COSMOS_FEE_AMOUNT="$OPENKMS_FETCH_COSMOS_FEE_AMOUNT"
     echo "note: OPENKMS_COSMOS_FEE_AMOUNT unset; using ${OPENKMS_COSMOS_FEE_AMOUNT} (ceil(gas_price × OPENKMS_COSMOS_GAS_LIMIT=${gas}))" >&2
   fi
-  if [[ -z "${OPENKMS_COSMOS_CHAIN_ID:-}" && -n "${lines[3]}" ]]; then
-    export OPENKMS_COSMOS_CHAIN_ID="${lines[3]}"
+  if [[ -z "${OPENKMS_COSMOS_CHAIN_ID:-}" && -n "${OPENKMS_FETCH_COSMOS_CHAIN_ID}" ]]; then
+    export OPENKMS_COSMOS_CHAIN_ID="$OPENKMS_FETCH_COSMOS_CHAIN_ID"
     echo "note: OPENKMS_COSMOS_CHAIN_ID unset; using ${OPENKMS_COSMOS_CHAIN_ID}" >&2
   fi
-  if [[ -z "${OPENKMS_COSMOS_HRP:-}" && -n "${lines[4]}" ]]; then
-    export OPENKMS_COSMOS_HRP="${lines[4]}"
+  if [[ -z "${OPENKMS_COSMOS_HRP:-}" && -n "${OPENKMS_FETCH_COSMOS_HRP}" ]]; then
+    export OPENKMS_COSMOS_HRP="$OPENKMS_FETCH_COSMOS_HRP"
     echo "note: OPENKMS_COSMOS_HRP unset; using ${OPENKMS_COSMOS_HRP}" >&2
   fi
 }
@@ -203,7 +127,7 @@ ENV_FILE=""
 DRY_RUN=0
 TARGET=""
 CARGO_EXTRA=()
-SOLANA_RPC_DEFAULT="https://api.devnet.solana.com"
+SOLANA_RPC_DEFAULT="$OPENKMS_DEFAULT_SOLANA_RPC_URL"
 
 while (($# > 0)); do
   case "$1" in

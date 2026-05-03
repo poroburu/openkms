@@ -14,6 +14,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REMOTE_GEN="$ROOT/scripts/generate_remote_e2e_request.sh"
 DEFAULT_ENV_DIR="$ROOT/.tmp/remote-keys"
+# shellcheck disable=SC1091
+source "$ROOT/scripts/e2e_defaults.sh"
 
 resolve_openkms_bin() {
   if [[ -n "${OPENKMS_BIN:-}" ]]; then
@@ -50,17 +52,17 @@ materialize — write broadcast-keys.env under the env directory (default ${DEFA
   --solana-label NAME      default solana-hot-0 (must match [[keys]] label on signer)
   --cosmos-label NAME      default cosmos-hub-0
   --out-dir DIR            default ${DEFAULT_ENV_DIR}
-  --solana-rpc-url URL     default https://api.devnet.solana.com
-  --solana-chain-id ID     default devnet (must match RPC cluster)
-  --solana-transfer-lamports N   default 5000
+  --solana-rpc-url URL     default ${OPENKMS_DEFAULT_SOLANA_RPC_URL}
+  --solana-chain-id ID     default ${OPENKMS_DEFAULT_SOLANA_CHAIN_ID} (must match RPC cluster)
+  --solana-transfer-lamports N   default ${OPENKMS_DEFAULT_SOLANA_TRANSFER_LAMPORTS}
   --cosmos-rest-url URL    if omitted, filled from chain-registry (needs curl)
   --cosmos-chain-id ID     if omitted with --cosmos-rest-url, from registry when fetched
   --cosmos-hrp HRP         if omitted, from registry when fetched
   --cosmos-fee-denom D     if omitted, from registry when fetched
   --cosmos-fee-amount N    if omitted, computed from registry gas price × gas limit
-  --cosmos-gas-limit N     default 200000
-  --cosmos-transfer-amount N     default 1
-  OPENKMS_COSMOS_CHAIN_REGISTRY_URL  optional; default ICS provider testnet chain.json
+  --cosmos-gas-limit N     default ${OPENKMS_DEFAULT_COSMOS_GAS_LIMIT}
+  --cosmos-transfer-amount N     default ${OPENKMS_DEFAULT_COSMOS_TRANSFER_AMOUNT}
+  OPENKMS_COSMOS_CHAIN_REGISTRY_URL  optional; default shared ICS provider testnet chain.json
 
 Forward pass — sources DIR/broadcast-keys.env via generate_remote_e2e_request.sh -e:
   --env-dir DIR   override OPENKMS_REMOTE_E2E_ENV_DIR (default ${DEFAULT_ENV_DIR})
@@ -80,99 +82,14 @@ require_opt() {
   fi
 }
 
-# Fetch REST URL, fee denom, fee amount, chain_id, hrp from chain-registry (same default as run_broadcast_e2e.sh).
-fetch_cosmos_registry_env() {
-  command -v curl >/dev/null 2>&1 || {
-    echo "error: curl required to fetch Cosmos defaults (or pass --cosmos-rest-url and related flags)" >&2
-    exit 1
-  }
-  command -v python3 >/dev/null 2>&1 || {
-    echo "error: python3 required to parse chain-registry JSON" >&2
-    exit 1
-  }
-
-  local reg="${OPENKMS_COSMOS_CHAIN_REGISTRY_URL:-https://raw.githubusercontent.com/cosmos/chain-registry/master/testnets/cosmosicsprovidertestnet/chain.json}"
-  local gas="${COSMOS_GAS_LIMIT:-200000}"
-  echo "note: fetching Cosmos defaults from chain-registry ($reg)" >&2
-  local json tmp outs
-  json="$(curl -fsSL "$reg")" || {
-    echo "error: could not download: $reg" >&2
-    exit 1
-  }
-  tmp="$(mktemp)" || exit 1
-  printf '%s\n' "$json" >"$tmp"
-  outs="$(python3 - "$tmp" "$gas" <<'PY'
-import json, math, sys
-
-with open(sys.argv[1], "r", encoding="utf-8") as f:
-    j = json.load(f)
-gas = int(sys.argv[2])
-
-rests = (j.get("apis") or {}).get("rest") or []
-if not rests:
-    raise SystemExit("chain.json: missing apis.rest")
-rest = str(rests[0].get("address") or "").strip()
-if not rest:
-    raise SystemExit("chain.json: empty apis.rest[0].address")
-
-fts = (j.get("fees") or {}).get("fee_tokens") or []
-if not fts:
-    raise SystemExit("chain.json: missing fees.fee_tokens")
-ft = fts[0]
-denom = str(ft.get("denom") or "").strip()
-if not denom:
-    raise SystemExit("chain.json: empty fee denom")
-
-price = None
-for key in ("average_gas_price", "low_gas_price", "high_gas_price", "fixed_min_gas_price"):
-    v = ft.get(key)
-    if v is not None and v != "":
-        price = float(v)
-        break
-if price is None:
-    price = 0.02
-
-amount = max(1, int(math.ceil(price * gas)))
-cid = str(j.get("chain_id") or "").strip()
-hrp = str(j.get("bech32_prefix") or "cosmos").strip()
-print(rest)
-print(denom)
-print(amount)
-print(cid)
-print(hrp)
-PY
-)" || {
-    rm -f "$tmp"
-    echo "error: failed to parse chain-registry JSON" >&2
-    exit 1
-  }
-  rm -f "$tmp"
-
-  local -a lines=()
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    lines+=("${line//$'\r'/}")
-  done <<<"$outs"
-
-  if ((${#lines[@]} < 5)); then
-    echo "error: unexpected chain-registry parse output" >&2
-    exit 1
-  fi
-
-  COSMOS_FETCH_REST="${lines[0]}"
-  COSMOS_FETCH_FEE_DENOM="${lines[1]}"
-  COSMOS_FETCH_FEE_AMOUNT="${lines[2]}"
-  COSMOS_FETCH_CHAIN_ID="${lines[3]}"
-  COSMOS_FETCH_HRP="${lines[4]}"
-}
-
 cmd_materialize() {
   local mnemonic_file="" passphrase_file=""
   local solana_path="m/44'/501'/0'/0'"
   local cosmos_path="m/44'/118'/0'/0/0"
   local sol_label="solana-hot-0" cos_label="cosmos-hub-0"
   local out_dir="$DEFAULT_ENV_DIR"
-  local sol_rpc="https://api.devnet.solana.com" sol_cid="devnet" sol_lamports="5000"
-  local cos_rest="" cos_cid="" cos_hrp="" cos_fee_denom="" cos_fee_amt="" cos_gas="200000" cos_xfer="1"
+  local sol_rpc="$OPENKMS_DEFAULT_SOLANA_RPC_URL" sol_cid="$OPENKMS_DEFAULT_SOLANA_CHAIN_ID" sol_lamports="$OPENKMS_DEFAULT_SOLANA_TRANSFER_LAMPORTS"
+  local cos_rest="" cos_cid="" cos_hrp="" cos_fee_denom="" cos_fee_amt="" cos_gas="$OPENKMS_DEFAULT_COSMOS_GAS_LIMIT" cos_xfer="$OPENKMS_DEFAULT_COSMOS_TRANSFER_AMOUNT"
 
   while (($# > 0)); do
     case "$1" in
@@ -304,14 +221,13 @@ cmd_materialize() {
     exit 1
   }
 
-  COSMOS_GAS_LIMIT="$cos_gas"
   if [[ -z "$cos_rest" || -z "$cos_fee_denom" || -z "$cos_fee_amt" || -z "$cos_cid" || -z "$cos_hrp" ]]; then
-    fetch_cosmos_registry_env
-    [[ -z "$cos_rest" ]] && cos_rest="$COSMOS_FETCH_REST"
-    [[ -z "$cos_fee_denom" ]] && cos_fee_denom="$COSMOS_FETCH_FEE_DENOM"
-    [[ -z "$cos_fee_amt" ]] && cos_fee_amt="$COSMOS_FETCH_FEE_AMOUNT"
-    [[ -z "$cos_cid" ]] && cos_cid="$COSMOS_FETCH_CHAIN_ID"
-    [[ -z "$cos_hrp" ]] && cos_hrp="$COSMOS_FETCH_HRP"
+    openkms_fetch_cosmos_registry_defaults "$cos_gas" || exit 1
+    [[ -z "$cos_rest" ]] && cos_rest="$OPENKMS_FETCH_COSMOS_REST_URL"
+    [[ -z "$cos_fee_denom" ]] && cos_fee_denom="$OPENKMS_FETCH_COSMOS_FEE_DENOM"
+    [[ -z "$cos_fee_amt" ]] && cos_fee_amt="$OPENKMS_FETCH_COSMOS_FEE_AMOUNT"
+    [[ -z "$cos_cid" ]] && cos_cid="$OPENKMS_FETCH_COSMOS_CHAIN_ID"
+    [[ -z "$cos_hrp" ]] && cos_hrp="$OPENKMS_FETCH_COSMOS_HRP"
   fi
 
   mkdir -p "$out_dir"
