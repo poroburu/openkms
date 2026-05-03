@@ -1,8 +1,5 @@
-# Staging smoke against a real deployment. Cosmos runs after Solana (`needs`).
-# Each job joins your tailnet first
-# (`tailscale/github-action`), then runs the same shell entrypoint as operators
-# (`scripts/run_remote_e2e_job.sh`). Set `OPENKMS_BASE_URL` to a URL reachable on
-# the tailnet (e.g. http://signer-hostname:8443). See docs/remote-e2e.md.
+# Manual staging smoke against a real deployment. docs/remote-e2e.md owns the
+# full operator guide; this workflow keeps only the wiring that Actions needs.
 #
 # Tailscale: OAuth client (recommended) — secrets TAILSCALE_OAUTH_CLIENT_ID,
 #   TAILSCALE_OAUTH_CLIENT_SECRET; repo var TAILSCALE_OAUTH_TAGS (default tag:ci if unset).
@@ -12,8 +9,7 @@
 # Secret OPENKMS_BASE_URL — Pi (or staging) HTTP URL on the tailnet after `tailscale up`.
 # Optional repo vars: OPENKMS_EXPECT_SOLANA_KEY_LABEL, OPENKMS_EXPECT_COSMOS_KEY_LABEL
 #
-# DISABLED for automatic CI: only `workflow_dispatch` until you enable production
-# staging gates. To run on every push to main, add under `on:`:
+# Manual-only until you enable production staging gates. To run on every push to main, add under `on:`:
 #   push:
 #     branches: [main]
 # (and optionally `concurrency:` to cancel in-progress runs). Mock signing smoke
@@ -23,8 +19,8 @@
 # docs/remote-e2e.md (nginx + deploy/nginx-openkms-remote-e2e.conf.example, or
 # systemd drop-in for api.github.com/meta `actions` CIDRs).
 #
-# gh act: same Tailscale steps as github.com. If tailscaled fails in act, pass
-# --container-options "--cap-add=NET_ADMIN --device /dev/net/tun" (see docs/remote-e2e.md).
+# gh act: tailscaled needs `--cap-add=NET_ADMIN --device /dev/net/tun` (or `--privileged`);
+# set that on your act CLI / IDE runner extension (see docs/remote-e2e.md).
 name: Remote E2E
 
 on:

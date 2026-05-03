@@ -1,9 +1,9 @@
 # openKMS
 
-YubiHSM2-backed transaction signer for **Cosmos**, **Solana**, and (coming
-soon) **EVM** chains. Designed for a homelab Raspberry Pi that signs for a
-trading agent such as [Openclaw](#openclaw-integration): small, deny-by-default,
-and never emits raw key material.
+YubiHSM2-backed transaction signer for **Cosmos** and **Solana**. The
+`0.1.0-rc.1` release is a stable prototype snapshot: small, deny-by-default,
+designed for a homelab Raspberry Pi that signs for a trading agent such as
+[Openclaw](#openclaw-integration), and never emits raw key material.
 
 ```
 ┌─────────────────────┐      HTTP+Bearer      ┌────────────────────────┐
@@ -40,6 +40,7 @@ and never emits raw key material.
 - [Operations](#operations)
 - [Backup & restore](#backup--restore)
 - [Testing](#testing)
+- [Automation lanes](#automation-lanes)
 - [Architecture](#architecture)
 
 ---
@@ -47,9 +48,8 @@ and never emits raw key material.
 ## Features
 
 - **HSM-only signing.** Private keys are generated or imported into the
-  YubiHSM2 and never leave as plaintext. Ed25519 (Solana), secp256k1
-  (Cosmos / EVM) supported today; secp256r1 (P-256) is wired in for future
-  chains.
+  YubiHSM2 and never leave as plaintext. Ed25519 (Solana) and secp256k1
+  (Cosmos) are supported by shipped signing routes.
 - **Deterministic ceremony.** One BIP-39 mnemonic derives three auth keys
   (ceremony / provisioner / signer) *and* the symmetric wrap key via
   HKDF-SHA256 with domain-separated info labels. Lose the HSM → re-derive
@@ -193,59 +193,22 @@ replacement HSM.
 
 ## Configuration
 
-`config.toml` lives at `/etc/openkms/config.toml`. A minimal example:
+`config.toml` lives at `/etc/openkms/config.toml`. The canonical example is
+[`examples/config.toml`](examples/config.toml); keep exact field names and
+example policy values there so docs do not drift.
+
+Minimal shape:
 
 ```toml
 [server]
 listen             = "127.0.0.1:9443"
 signer_token_file  = "/etc/openkms/signer.token"
 admin_token_file   = "/etc/openkms/admin.token"
-inflight_limit     = 64
-replay_window_secs = 120
 
 [hsm]
-connector_url   = "http://127.0.0.1:12345"
-auth_key_id     = 3                  # signer auth key
-password_file   = "/etc/openkms/hsm-password"
-
-[audit]
-path          = "/var/lib/openkms/audit.jsonl"
-hmac_key_file = "/etc/openkms/audit-hmac.key"   # optional
-
-state_dir = "/var/lib/openkms"
-
-[cosmos]
-accepted_pubkey_type_urls = [
-  "/cosmos.crypto.secp256k1.PubKey",
-  "/ethermint.crypto.v1.ethsecp256k1.PubKey",
-  "/injective.crypto.v1beta1.ethsecp256k1.PubKey",
-]
-
-[[keys]]
-label            = "cosmos-hub-0"
-chain            = "cosmos"
-object_id        = 0x0100
-derivation_path  = "m/44'/118'/0'/0/0"
-address_style    = "cosmos"
-default_hrp      = "cosmos"
-
-[keys.policy]
-enabled              = true
-max_signs_per_minute = 6
-max_signs_per_hour   = 120
-max_signs_per_day    = 500
-daily_cap_lamports   = "5000000000"    # 5_000 ATOM, uatom
-per_tx_cap_lamports  = "500000000"     # 500 ATOM per tx
-
-  [[keys.policy.allowed_messages]]
-  type_url          = "/cosmos.bank.v1beta1.MsgSend"
-  allowed_recipients = ["cosmos1...", "cosmos1..."]
-  per_tx_cap         = { uatom = "500000000" }
-
-  [[keys.policy.allowed_messages]]
-  type_url          = "/cosmwasm.wasm.v1.MsgExecuteContract"
-  allowed_contracts = ["cosmos1contract..."]
-  allowed_methods   = ["swap", "provide_liquidity"]
+connector_url = "http://127.0.0.1:12345"
+auth_key_id   = 3
+password_file = "/etc/openkms/hsm-password"
 
 [[keys]]
 label     = "solana-hot-0"
@@ -253,17 +216,10 @@ chain     = "solana"
 object_id = 0x0101
 
 [keys.policy]
-enabled              = true
-max_signs_per_minute = 30
-max_signs_per_day    = 5000
-per_tx_cap_lamports  = "5000000000"
+enabled = true
 
   [[keys.policy.allowed_programs]]
-  id      = "11111111111111111111111111111111"    # System Program
-  comment = "transfers"
-
-  [[keys.policy.allowed_programs]]
-  id      = "ComputeBudget111111111111111111111111111111"
+  id = "11111111111111111111111111111111"
 ```
 
 ### File-permission checks
@@ -308,6 +264,9 @@ of `signer_token_file`. Admin endpoints use a separate token.
 ```json
 { "status": "ok", "hsm_up": true }
 ```
+
+The first response after process start may return `"hsm_up": null` while the
+probe result is being established; subsequent responses return a boolean.
 
 ### `GET /keys`
 
@@ -514,6 +473,22 @@ For live testnet broadcasts through a local signer booted in GitHub Actions,
 see [`docs/broadcast-e2e.md`](docs/broadcast-e2e.md) and
 `.github/workflows/broadcast-e2e.yml`.
 
+## Automation lanes
+
+The repository has three automation lanes:
+
+- `.github/workflows/ci.yml` is the fast source-of-truth check for formatting,
+  clippy, default tests, docs drift, and the mock remote shell regression.
+- `.github/workflows/remote-e2e.yml` is a manual staging smoke test against a
+  deployed signer. [`docs/remote-e2e.md`](docs/remote-e2e.md) owns its secrets,
+  Tailscale, fixture, and operator procedures.
+- `.github/workflows/broadcast-e2e.yml` is a manual live testnet broadcast gate
+  that spends testnet funds. [`docs/broadcast-e2e.md`](docs/broadcast-e2e.md)
+  owns its key material, funding, and RPC guidance.
+
+E2E wrapper scripts share Solana/Cosmos default resolution through
+`scripts/e2e_defaults.sh`; keep operator flags in each script's `--help`.
+
 ## Architecture
 
 ```
@@ -546,12 +521,11 @@ Adding a new chain:
 2. Add a `Chain::<Chain>` variant, a `SignRequest` route in `server.rs`,
    and any required `[cosmos]`-equivalent settings in `config.rs`.
 3. Extend the policy engine's `Intent`-level checks if the new chain has
-   semantics the generic checks can't express (e.g. per-call_data
-   allowlisting for EVM).
+   semantics the generic checks cannot express.
 
 The HSM, policy, audit, admin, metrics, and replay layers are chain-agnostic
 and don't need changes.
 
 ## License
 
-TBD. Intended for personal / homelab use; not yet published to crates.io.
+Licensed under Apache-2.0. See [`Cargo.toml`](Cargo.toml) for package metadata.

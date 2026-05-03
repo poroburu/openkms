@@ -1,5 +1,5 @@
-//! Chain-agnostic traits that every concrete chain signer (Solana, Cosmos,
-//! future EVM) implements, plus the typed policy-evaluation data model.
+//! Chain-agnostic traits that every shipped chain signer (Solana, Cosmos)
+//! implements, plus the typed policy-evaluation data model.
 //!
 //! The server is one route per chain. Each route knows the concrete
 //! [`ChainSigner`] impl it is calling, so the trait is not required to be
@@ -53,8 +53,8 @@ pub struct RequestContext {
 }
 
 /// A single outbound value movement — native token or wrapped / SPL / CW20 /
-/// ERC-20. The policy engine's amount-cap and recipient-allowlist rules match
-/// against these.
+/// ERC-20-style. The policy engine's amount-cap and recipient-allowlist rules
+/// match against these.
 #[derive(Clone, Debug)]
 pub struct Transfer {
     pub token: TokenRef,
@@ -86,11 +86,11 @@ impl TokenRef {
     }
 }
 
-/// A program / contract / EVM target the transaction invokes.
+/// A program or contract target the transaction invokes.
 #[derive(Clone, Debug)]
 pub struct ProgramRef {
     /// Chain-local program identifier: Solana program-ID string, Cosmos
-    /// contract address, or `(to_address)` for EVM.
+    /// contract address, or future chain-specific target address.
     pub id: String,
     /// Method / Msg-type URL / 4-byte selector (hex, without 0x), if known.
     pub method: Option<String>,

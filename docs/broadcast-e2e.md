@@ -1,12 +1,7 @@
 # Broadcast E2E
 
-This repo now carries three separate automation lanes:
-
-- `.github/workflows/ci.yml` for format, clippy, tests, and the mock remote shell check
-- `.github/workflows/remote-e2e.yml` for smoke tests against a real deployed
-  `openkms` instance (**manual** `workflow_dispatch` until you enable `push:`)
-- `.github/workflows/broadcast-e2e.yml` for live Solana and Cosmos testnet
-  broadcasts through a local `openkms` server started inside GitHub Actions
+[`README.md`](../README.md) owns the short map of repository automation lanes.
+This file owns the detailed operator procedure for `.github/workflows/broadcast-e2e.yml`.
 
 The broadcast lane is intentionally **manual-only** (`workflow_dispatch`).
 It spends real testnet funds, depends on live RPC availability, and is meant to
@@ -96,7 +91,7 @@ You can override the container images and Cosmos key name with:
 Use `scripts/run_broadcast_e2e.sh` to source key material (optional), set
 `OPENKMS_BROADCAST_TESTS=1`, apply defaults (Solana devnet RPC; Cosmos REST/fee
 /chain id from [chain-registry](https://github.com/cosmos/chain-registry) when
-unset), then run the ignored `cargo` integration tests:
+unset via `scripts/e2e_defaults.sh`), then run the ignored `cargo` integration tests:
 
 ```bash
 # After: bash ./scripts/generate_broadcast_key_material.sh both ./.tmp/broadcast-keys

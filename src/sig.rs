@@ -1,7 +1,7 @@
 //! Shared ECDSA signature post-processing.
 //!
-//! YubiHSM2 returns ECDSA signatures as ASN.1 DER blobs. Cosmos SDK (and EVM)
-//! consumers expect a compact 64-byte `r || s` form with low-`s` normalization
+//! YubiHSM2 returns ECDSA signatures as ASN.1 DER blobs. Cosmos SDK consumers
+//! expect a compact 64-byte `r || s` form with low-`s` normalization
 //! (BIP-0062 rule 5) to prevent signature malleability.
 
 use k256::ecdsa::Signature as K256Sig;
@@ -22,8 +22,7 @@ pub enum SigError {
 /// Parse a DER-encoded secp256k1 ECDSA signature, normalize `s` to the low half
 /// of the curve order, and return the 64-byte compact form.
 ///
-/// Used by Cosmos and (future) EVM signers. Cosmos SDK rejects high-`s`
-/// signatures; Ethereum EIP-2 also requires low-`s`.
+/// Used by the Cosmos signer. Cosmos SDK rejects high-`s` signatures.
 pub fn secp256k1_der_to_compact_low_s(der: &[u8]) -> Result<CompactSignature, SigError> {
     let sig = K256Sig::from_der(der).map_err(|e| SigError::Parse(e.to_string()))?;
     let normalized = sig.normalize_s().unwrap_or(sig);

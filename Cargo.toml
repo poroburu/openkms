@@ -1,8 +1,8 @@
 [package]
 name = "openkms"
-version = "0.1.0"
+version = "0.1.0-rc.1"
 edition = "2024"
-description = "YubiHSM2-backed transaction signer for Cosmos + Solana (+ EVM later)"
+description = "YubiHSM2-backed transaction signer for Cosmos and Solana"
 license = "Apache-2.0"
 rust-version = "1.85"
 
@@ -97,7 +97,7 @@ tokio-test = "0.4"
 [features]
 # Real hardware integration tests are opt-in via OPENKMS_HARDWARE_TESTS=1
 hardware-tests = []
-# Placeholder for the future EVM chain module
+# Gated scratch space for future EVM work; not part of the shipped API.
 evm = []
 
 [profile.release]

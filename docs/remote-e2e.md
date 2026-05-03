@@ -1,15 +1,7 @@
 # Remote E2E Smoke Tests
 
-This repo now carries three separate automation lanes:
-
-- `.github/workflows/ci.yml` for **format + clippy** (one cached job), **`cargo test`**
-  (separate job so logs are not mixed with the next bullet), and a **mock remote**
-  job that runs `tests/remote_e2e_job_shell.rs` via `cargo test … -- --ignored`
-- `.github/workflows/remote-e2e.yml` for staging smoke tests against a real
-  deployed `openkms` instance — **manual-only** (`workflow_dispatch`) until you add a
-  `push:` trigger for production gating; requires repository secrets
-- `.github/workflows/broadcast-e2e.yml` for live testnet broadcasts through a
-  local `openkms` server started in GitHub Actions (**manual-only**)
+[`README.md`](../README.md) owns the short map of repository automation lanes.
+This file owns the detailed operator procedure for `.github/workflows/remote-e2e.yml`.
 
 The remote lane is intentionally a smoke test, not a load test. Its job is to
 prove that a real deployment can answer `/health`, `/keys`, `/metrics`, and safe
@@ -29,6 +21,8 @@ request formats.
 - **`scripts/remote_e2e_smoke.sh`** implements the HTTP checks (**`/health`**, **`/keys`**,
   **`/metrics`**, **`POST`** sign) once **`OPENKMS_SIGN_REQUEST_FILE`** and **`OPENKMS_SIGN_PATH`**
   are set (the job script sets them for you).
+- **`scripts/e2e_defaults.sh`** owns shared Solana and Cosmos default resolution
+  for E2E wrapper scripts.
 
 **Self-contained CI** — Any workflow that brings up `openkms` on the runner (for
 example the pattern in [`broadcast-e2e.md`](broadcast-e2e.md)) can use the **same**
@@ -187,8 +181,7 @@ TLS, rate limits). See [`deploy/README.md`](../deploy/README.md).
 
 ### Local `gh act` and common `curl` failures
 
-**Same path as GitHub:** `remote-e2e.yml` **always** runs **`tailscale/github-action`**
-before smoke, then **`curl`** uses **`OPENKMS_BASE_URL`** (your Pi on the tailnet). Put
+**Same path as GitHub:** `remote-e2e.yml` runs **`tailscale/github-action@v4`**, then **`curl`** uses **`OPENKMS_BASE_URL`**. Put
 the same **`TAILSCALE_OAUTH_*`**, **`OPENKMS_BASE_URL`**, and smoke secrets in **`.secrets`**
 (and **`TAILSCALE_OAUTH_TAGS`** / label vars in **`.vars`**) as for Actions.
 
@@ -196,9 +189,11 @@ the same **`TAILSCALE_OAUTH_*`**, **`OPENKMS_BASE_URL`**, and smoke secrets in *
 
 **Why `gh act` can still fail:** [nektos/act](https://github.com/nektos/act) sets **`ACT=true`**
 and runs steps inside Docker. **`tailscaled`** usually needs **`/dev/net/tun`** and
-**`CAP_NET_ADMIN`**. **Pass narrow Docker options first** if the Tailscale step shows
-**`503 Service Unavailable: no backend`** or **tailscaled doesn’t appear to be running**
-(syntax varies by **`gh act` / `act`** version; see **`act --help`**):
+**`CAP_NET_ADMIN`**. Without them the Tailscale step often fails with **`503 Service Unavailable: no backend`**.
+
+Configure **`--container-options "--cap-add=NET_ADMIN --device /dev/net/tun"`** on the
+**`act` / `gh act`** CLI, in **`.actrc`**, or in your **VS Code / Cursor GitHub Local Actions**
+runner extension settings (same flags act would receive). Syntax varies by tool; see **`act --help`**.
 
 ```bash
 gh act -W .github/workflows/remote-e2e.yml -j solana --secret-file .secrets --var-file .vars \
@@ -208,8 +203,9 @@ gh act -W .github/workflows/remote-e2e.yml -j solana --secret-file .secrets --va
 If **`tailscaled` still fails** (some Docker Desktop / WSL setups), fall back to
 **`--privileged`** for local debugging only — broader than the line above.
 
-See [Tailscale’s GitHub Action README](https://github.com/tailscale/github-action). **github.com**
-runners already match what the action expects; **no** workflow YAML change is required there.
+**Local act vs `node24`:** Older **act**/`gh act` rejects actions whose **`action.yml`** uses **`runs.using: node24`** (e.g. **`tailscale/github-action@v4`**, **`Swatinem/rust-cache@v2.9.1`**). **`actions/checkout@v4`** is still **node20**, which is one reason **`broadcast-e2e.yml`** can look easier under act than workflows that pull **node24** actions. **Upgrade [nektos/act](https://github.com/nektos/act/releases)** (or the **`gh extension`** that bundles it) for local runs. This repo **pins** **`Swatinem/rust-cache@v2.9.1`** in **`ci.yml`** / **`broadcast-e2e.yml`** while staying on the **v2** line.
+
+See [Tailscale’s GitHub Action README](https://github.com/tailscale/github-action).
 
 The **stable** path for “CI always reaches the Pi the same way” is **`workflow_dispatch` on github.com**;
 use **`gh act`** when you want to exercise the workflow locally and accept Docker/Tailscale tuning.

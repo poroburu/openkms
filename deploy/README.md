@@ -93,24 +93,6 @@ Both units are written with a deny-by-default posture:
 Review the unit files and tune the `IPAddressAllow=` entries and
 `MemoryHigh=`/`TasksMax=` to match the footprint of your homelab.
 
-For remote smoke tests against a staging deployment, see
+For remote smoke tests against a staging deployment, including the Tailscale
+path, reverse-proxy option, and GitHub runner CIDR tradeoffs, see
 [`../docs/remote-e2e.md`](../docs/remote-e2e.md).
-
-### GitHub Actions `remote-e2e.yml`
-
-**Tailscale (default workflow):** CI joins your tailnet; traffic is from Tailscale
-**`100.64.0.0/10`**. Use **`openkms.service.d/tailnet.conf`** or equivalent so the
-unit allows CGNAT peers — **`install-remote-e2e-host.sh`** installs this drop-in.
-
-**Without Tailscale:** hosted runners use **public** IPs. The default
-**`openkms.service`** sandbox allows localhost and RFC1918/ULA only, so **direct**
-**`0.0.0.0`** binds reject GitHub unless you add **`actions`** CIDRs or a proxy:
-
-- **Preferred:** TLS reverse proxy → **`http://127.0.0.1:<port>`**, openkms
-  **`listen`** stays loopback. Example fragment:
-  [`nginx-openkms-remote-e2e.conf.example`](nginx-openkms-remote-e2e.conf.example).
-- **Direct exposure:** merge CIDRs from **`https://api.github.com/meta`** (`actions`)
-  into **`IPAddressAllow=`**, e.g. with
-  [`../scripts/gen_github_actions_systemd_dropin.sh`](../scripts/gen_github_actions_systemd_dropin.sh).
-- **Dedicated staging only:** a drop-in can clear **`IPAddressDeny=`** / allow all
-  peers; do not use that pattern on a general homelab node.

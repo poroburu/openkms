@@ -1,5 +1,5 @@
-# Live broadcast tests: see docs/broadcast-e2e.md for full env reference.
-# Jobs invoke scripts/run_broadcast_e2e.sh (same defaults as local runs).
+# Manual live testnet broadcasts. docs/broadcast-e2e.md owns the full env and
+# funding guide; jobs invoke scripts/run_broadcast_e2e.sh like local runs.
 # Secrets: OPENKMS_SOLANA_SIGNER_SEED_B64, OPENKMS_COSMOS_SIGNER_SCALAR_B64,
 #   OPENKMS_COSMOS_REST_URL; OPENKMS_SOLANA_RPC_URL optional (script defaults devnet).
 # Repo variables: optional overrides (fee denom/amount, gas, timeouts, etc.).
@@ -27,7 +27,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9.1
 
       - name: Run Solana broadcast test
         run: |
@@ -57,7 +57,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9.1
 
       - name: Run Cosmos broadcast test
         run: |
