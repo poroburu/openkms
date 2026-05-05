@@ -80,6 +80,9 @@ jobs:
         with:
           path: website/dist
 
+  # deploy-pages requires GitHub-hosted OIDC (ACTIONS_ID_TOKEN_REQUEST_URL).
+  # nektos/act sets ACT=true in the runner env; gate via a shell step because act's
+  # workflow schema rejects `env` in job-level `if` (see nektos/act schema docs).
   deploy:
     environment:
       name: github-pages
@@ -87,6 +90,18 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
+      - name: Detect local act (no OIDC for deploy-pages)
+        id: act
+        shell: bash
+        run: |
+          if [ "${ACT:-}" = "true" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Running under act: skipping deploy-pages (OIDC unavailable)."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Deploy to GitHub Pages
         id: deployment
+        if: steps.act.outputs.skip != 'true'
         uses: actions/deploy-pages@v4
