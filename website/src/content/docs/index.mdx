@@ -1,78 +1,80 @@
 ---
 title: openKMS
-description: YubiHSM2-backed transaction signing for Cosmos and Solana.
+description: Local Digital Asset Custody Platform.
 template: splash
 hero:
-  tagline: YubiHSM2-backed transaction signing for Cosmos and Solana.
+  tagline: Local Digital Asset Custody Platform.
   image:
     file: ../../../public/favicon.svg
   actions:
     - text: Start signing
       link: /openkms/guides/quick-start/
       icon: right-arrow
-    - text: Read the HTTP API
-      link: /openkms/reference/http-api/
-      variant: secondary
+    - text: For agents
+      link: /openkms/guides/openclaw-integration/
+      icon: external
+      variant: minimal
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import { Card, CardGrid } from "@astrojs/starlight/components";
 
-openKMS is a small, deny-by-default signing service for operators who want
-hardware-backed keys without handing raw private material to trading agents or
-automation.
+Sign transaction requests without exposing keys.
 
 <div className="system-flow" aria-label="openKMS signing flow">
   <div className="flow-node">
-    <span className="flow-label">Agent</span>
-    <span className="flow-detail">builds tx</span>
+    <span className="flow-label">Request</span>
+    <span className="flow-detail">Automated system submits transaction</span>
   </div>
-  <span className="flow-arrow" aria-hidden="true">→</span>
-  <div className="flow-node flow-node-strong">
+  <span className="flow-arrow" aria-hidden="true">
+    →
+  </span>
+  <div className="flow-node">
     <span className="flow-label">Policy</span>
-    <span className="flow-detail">caps, allowlists, kill switch</span>
+    <span className="flow-detail">Enforces limits and allowlists</span>
   </div>
-  <span className="flow-arrow" aria-hidden="true">→</span>
+  <span className="flow-arrow" aria-hidden="true">
+    →
+  </span>
   <div className="flow-node">
-    <span className="flow-label">YubiHSM2</span>
-    <span className="flow-detail">signs inside hardware</span>
+    <span className="flow-label">Hardware Signer</span>
+    <span className="flow-detail">Signs without exposing key material</span>
   </div>
-  <span className="flow-arrow" aria-hidden="true">→</span>
+  <span className="flow-arrow" aria-hidden="true">
+    →
+  </span>
   <div className="flow-node">
-    <span className="flow-label">Signature</span>
-    <span className="flow-detail">no raw keys</span>
+    <span className="flow-label">Response</span>
+    <span className="flow-detail">Signature for broadcast</span>
   </div>
 </div>
 
-## Who This Is For
-
-openKMS is for solo operators and small teams running automated strategies,
-validators, treasury bots, or backend jobs that need hot signing without hot
-private keys. It assumes you can operate a hardened Linux host, keep a ceremony
-mnemonic offline, and treat policy as the boundary between automation and funds.
-
 <CardGrid>
-  <Card title="Keys never leave hardware">
-    Signing keys live in a YubiHSM2. openKMS returns signatures, not private key
-    material.
+  <Card title="Trading agents">
+    * Request signatures on demand while policy limits downside.
+    * Keep strategy logic separate from custody.
+
+    [Use the HTTP API](/openkms/reference/http-api/)
+
   </Card>
-  <Card title="Policy before every signature">
-    Per-key rate limits, spend caps, allowlists, and an admin kill switch guard
-    each request before the HSM is touched.
+  <Card title="Validator operations">
+    * Keep signing keys local and hardware-backed.
+    * Deploy on hardened infrastructure with operational checks.
+
+    [Plan deployment](/openkms/operations/deployment/)
+
   </Card>
-  <Card title="Built for small operators">
-    Systemd units, remote smoke tests, testnet broadcast checks, and Prometheus
-    metrics are documented together.
+  <Card title="Treasury workflows">
+    * Enforce spend caps, rate limits, and allowlists.
+    * Keep an audit trail and emergency disable path.
+
+    [Author signing policy](/openkms/guides/policy-authoring/)
+
   </Card>
-  <Card title="OpenAPI and docs stay checked">
-    The HTTP API reference points at a generated OpenAPI spec that CI checks for
-    drift. Download the spec from
-    [`openapi/openkms.v1.json`](https://github.com/poroburu/openkms/blob/main/openapi/openkms.v1.json).
+  <Card title="Backend services">
+    * Sign through a narrow local boundary.
+    * Avoid embedding private keys in internal services.
+
+    [Review the Security Model](/openkms/concepts/security-model/)
+
   </Card>
 </CardGrid>
-
-## Where To Start
-
-- New operators should begin with [Quick Start](/openkms/guides/quick-start/).
-- Security reviewers should read the [Security Model](/openkms/concepts/security-model/).
-- Integrators should use the [HTTP API reference](/openkms/reference/http-api/).
-- Deployment work belongs in [Deployment](/openkms/operations/deployment/).

@@ -60,10 +60,16 @@ mobile-starlight-toc details[open] summary {
   border-radius: 0.875rem;
   background: rgba(15, 23, 42, 0.72);
   box-shadow: 0 1rem 2rem rgba(0, 0, 0, 0.16);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
 }
 
-.flow-node-strong {
+.flow-node:hover {
   border-color: var(--sl-color-accent-high);
+  box-shadow: 0 1.25rem 2.5rem rgba(0, 0, 0, 0.22);
+  transform: translateY(-0.125rem);
 }
 
 .flow-label,
