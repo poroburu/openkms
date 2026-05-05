@@ -1,0 +1,212 @@
+---
+const columns = [
+  {
+    id: "hotwallet",
+    title: "Hot wallet",
+    sub: "Mnemonic in `.env`",
+    tone: "danger",
+  },
+  {
+    id: "cloud-custody",
+    title: "Cloud custody",
+    sub: "Fireblocks · Turnkey · Privy · Anchorage",
+    tone: "neutral",
+  },
+  {
+    id: "cloud-kms",
+    title: "Cloud KMS",
+    sub: "AWS KMS · GCP Cloud KMS",
+    tone: "neutral",
+  },
+  {
+    id: "openkms",
+    title: "openKMS",
+    sub: "Self-hosted YubiHSM2 signer",
+    tone: "highlight",
+  },
+];
+
+const rows = [
+  {
+    label: "Where keys live",
+    cells: [
+      { value: "Strategy host (plaintext)", state: "bad" },
+      { value: "Vendor cloud HSM", state: "ok" },
+      { value: "Vendor cloud HSM", state: "ok" },
+      { value: "Your YubiHSM2", state: "good" },
+    ],
+  },
+  {
+    label: "Who writes the policy",
+    cells: [
+      { value: "Nobody", state: "bad" },
+      { value: "You, in their UI", state: "ok" },
+      { value: "Generic IAM only", state: "bad" },
+      { value: "You, in TOML + admin API", state: "good" },
+    ],
+  },
+  {
+    label: "Chain-aware allowlists",
+    cells: [
+      { value: "None", state: "bad" },
+      { value: "Partial, vendor-defined", state: "ok" },
+      { value: "Not supported", state: "bad" },
+      { value: "Programs · message types · recipients", state: "good" },
+    ],
+  },
+  {
+    label: "Audit log ownership",
+    cells: [
+      { value: "App logs (if any)", state: "bad" },
+      { value: "Vendor dashboard", state: "ok" },
+      { value: "CloudTrail / Cloud Audit Logs", state: "ok" },
+      { value: "Local JSONL + HMAC chain", state: "good" },
+    ],
+  },
+  {
+    label: "Open source",
+    cells: [
+      { value: "—", state: "bad" },
+      { value: "Closed", state: "bad" },
+      { value: "Closed", state: "bad" },
+      { value: "Apache-2.0", state: "good" },
+    ],
+  },
+  {
+    label: "Runs on a Raspberry Pi",
+    cells: [
+      { value: "Yes (and that's the problem)", state: "bad" },
+      { value: "No — vendor cloud only", state: "bad" },
+      { value: "No — vendor cloud only", state: "bad" },
+      { value: "Yes — homelab is the design target", state: "good" },
+    ],
+  },
+  {
+    label: "Pricing",
+    cells: [
+      { value: "Free until you're drained", state: "bad" },
+      { value: "Per signature / seat", state: "ok" },
+      { value: "Per key / per request", state: "ok" },
+      { value: "One-time hardware", state: "good" },
+    ],
+  },
+];
+
+const stateClasses: Record<string, string> = {
+  good: "text-emerald-300",
+  ok: "text-fog-200",
+  bad: "text-rose-300/80",
+};
+---
+
+<section class="relative" aria-labelledby="comparison-heading">
+  <div class="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+    <div class="reveal mx-auto max-w-3xl text-center">
+      <p
+        class="text-xs font-semibold uppercase tracking-[0.18em] text-accent-300"
+      >
+        How we compare
+      </p>
+      <h2
+        id="comparison-heading"
+        class="mt-3 text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl"
+      >
+        Same threat model. Different blast radius.
+      </h2>
+      <p class="mt-4 text-balance text-lg text-fog-200">
+        Cloud custody and cloud KMS solve part of the problem. They still
+        leave you trusting someone else's policy, audit log, and uptime.
+      </p>
+    </div>
+
+    <div
+      class="reveal mt-12 overflow-hidden rounded-2xl border border-white/10 bg-ink-900/40 shadow-card"
+    >
+      <div class="overflow-x-auto">
+        <table class="w-full min-w-[820px] border-collapse text-left text-sm">
+          <thead>
+            <tr class="border-b border-white/10">
+              <th
+                scope="col"
+                class="w-48 px-4 py-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-fog-400"
+              >
+                Property
+              </th>
+              {
+                columns.map((col) => (
+                  <th
+                    scope="col"
+                    class:list={[
+                      "border-l border-white/5 px-4 py-4 align-top",
+                      col.tone === "highlight" &&
+                        "bg-accent-500/[0.08]",
+                    ]}
+                  >
+                    <div
+                      class:list={[
+                        "text-base font-semibold",
+                        col.tone === "danger" && "text-rose-300",
+                        col.tone === "neutral" && "text-white",
+                        col.tone === "highlight" && "text-accent-300",
+                      ]}
+                    >
+                      {col.title}
+                    </div>
+                    <div class="mt-1 font-mono text-[11px] text-fog-400">
+                      {col.sub.split("`").map((seg, i) =>
+                        i % 2 === 1 ? <code>{seg}</code> : <span>{seg}</span>,
+                      )}
+                    </div>
+                  </th>
+                ))
+              }
+            </tr>
+          </thead>
+          <tbody>
+            {
+              rows.map((row, rIdx) => (
+                <tr
+                  class:list={[
+                    "border-b border-white/5",
+                    rIdx % 2 === 1 && "bg-white/[0.015]",
+                  ]}
+                >
+                  <th
+                    scope="row"
+                    class="px-4 py-4 align-top text-[13px] font-medium text-fog-200"
+                  >
+                    {row.label}
+                  </th>
+                  {row.cells.map((cell, cIdx) => (
+                    <td
+                      class:list={[
+                        "border-l border-white/5 px-4 py-4 align-top text-[13px]",
+                        columns[cIdx].tone === "highlight" &&
+                          "bg-accent-500/[0.06]",
+                      ]}
+                    >
+                      <span
+                        class:list={[
+                          "inline-flex items-start gap-1.5",
+                          stateClasses[cell.state],
+                        ]}
+                      >
+                        <span aria-hidden="true" class="mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
+                        <span>{cell.value}</span>
+                      </span>
+                    </td>
+                  ))}
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p class="mt-6 text-center text-xs text-fog-400">
+      Vendor names are trademarks of their respective owners. Listed for
+      comparison only.
+    </p>
+  </div>
+</section>

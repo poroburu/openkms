@@ -1,0 +1,86 @@
+---
+import "../styles/marketing.css";
+import Nav from "../components/landing/Nav.astro";
+import Hero from "../components/landing/Hero.astro";
+import TrustStrip from "../components/landing/TrustStrip.astro";
+import Problem from "../components/landing/Problem.astro";
+import Architecture from "../components/landing/Architecture.astro";
+import LiveAPI from "../components/landing/LiveAPI.astro";
+import Capabilities from "../components/landing/Capabilities.astro";
+import Comparison from "../components/landing/Comparison.astro";
+import Openclaw from "../components/landing/Openclaw.astro";
+import Footer from "../components/landing/Footer.astro";
+
+const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
+const title =
+  "openKMS — Hardware-backed signing for autonomous trading agents";
+const description =
+  "openKMS gives autonomous Solana and Cosmos strategies a deny-by-default signing API backed by a YubiHSM2. Keys never leave the device. Policy stops the bad trades.";
+---
+
+<!doctype html>
+<html lang="en" class="scheme-only-dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#050811" />
+    <link rel="icon" type="image/svg+xml" href={`${baseUrl}/favicon.svg`} />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+
+    <link rel="preconnect" href="https://rsms.me/" />
+    <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/gh/JetBrains/JetBrainsMono/web/css/jetbrains-mono.css"
+    />
+  </head>
+  <body class="min-h-screen text-[15px] leading-relaxed text-slate-200">
+    <a
+      href="#main"
+      class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-md focus:bg-accent-500 focus:px-3 focus:py-2 focus:text-ink-950"
+    >
+      Skip to main content
+    </a>
+    <Nav />
+    <main id="main" class="relative">
+      <Hero />
+      <TrustStrip />
+      <Problem />
+      <Architecture />
+      <LiveAPI />
+      <Capabilities />
+      <Comparison />
+      <Openclaw />
+      <Footer />
+    </main>
+
+    <script>
+      const targets = document.querySelectorAll<HTMLElement>(".reveal");
+      if ("IntersectionObserver" in window && targets.length > 0) {
+        const observer = new IntersectionObserver(
+          (entries) => {
+            for (const entry of entries) {
+              if (entry.isIntersecting) {
+                entry.target.classList.add("is-visible");
+                observer.unobserve(entry.target);
+              }
+            }
+          },
+          { rootMargin: "0px 0px -10% 0px", threshold: 0.05 },
+        );
+        targets.forEach((el) => observer.observe(el));
+      } else {
+        targets.forEach((el) => el.classList.add("is-visible"));
+      }
+    </script>
+  </body>
+</html>

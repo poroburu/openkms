@@ -1,0 +1,280 @@
+---
+const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+const stages = [
+  { id: "strategy", x: 50, label: "Strategy", sub: "Openclaw / agent" },
+  { id: "auth", x: 200, label: "Auth", sub: "Bearer token" },
+  { id: "decode", x: 350, label: "Decode", sub: "Solana / Cosmos" },
+  { id: "policy", x: 500, label: "Policy", sub: "Caps · allowlists" },
+  { id: "replay", x: 650, label: "Replay", sub: "Cache" },
+  { id: "hsm", x: 800, label: "YubiHSM2", sub: "Sign in hardware" },
+];
+---
+
+<section class="relative" aria-labelledby="architecture-heading">
+  <div class="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+    <div class="reveal mx-auto max-w-3xl text-center">
+      <p
+        class="text-xs font-semibold uppercase tracking-[0.18em] text-accent-300"
+      >
+        How it works
+      </p>
+      <h2
+        id="architecture-heading"
+        class="mt-3 text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl"
+      >
+        Five gates between the strategy and your keys.
+      </h2>
+      <p class="mt-4 text-balance text-lg text-fog-200">
+        Every signing request crosses authentication, chain decoding, policy
+        evaluation, replay protection, and only then reaches the YubiHSM2.
+        Each layer is fail-closed and emits to the audit log.
+      </p>
+    </div>
+
+    <div
+      class="reveal mt-12 overflow-hidden rounded-2xl border border-white/10 bg-ink-900/40 p-3 shadow-card sm:p-5"
+    >
+      <div class="overflow-x-auto">
+        <svg
+          viewBox="0 0 900 320"
+          role="img"
+          aria-label="Request lifecycle from strategy to YubiHSM2 with audit and metrics emitted at each step"
+          class="block h-auto w-full min-w-[720px]"
+        >
+          <defs>
+            <linearGradient id="trust-host" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="#0f172a" stop-opacity="0.9" />
+              <stop offset="100%" stop-color="#0b1220" stop-opacity="0.9" />
+            </linearGradient>
+            <linearGradient id="trust-hsm" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="#0c4a6e" stop-opacity="0.55" />
+              <stop offset="100%" stop-color="#155e75" stop-opacity="0.55" />
+            </linearGradient>
+            <linearGradient id="path-grad" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="#7dd3fc" />
+              <stop offset="100%" stop-color="#0ea5e9" />
+            </linearGradient>
+            <filter id="node-glow" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur stdDeviation="3" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+
+          <rect
+            x="10"
+            y="50"
+            width="720"
+            height="180"
+            rx="20"
+            fill="url(#trust-host)"
+            stroke="rgba(148,163,184,0.18)"
+          />
+          <text
+            x="20"
+            y="72"
+            fill="#94a3b8"
+            font-family="JetBrains Mono, monospace"
+            font-size="10"
+            letter-spacing="2"
+          >TRUST: HOST</text>
+
+          <rect
+            x="740"
+            y="50"
+            width="150"
+            height="180"
+            rx="20"
+            fill="url(#trust-hsm)"
+            stroke="rgba(56,189,248,0.45)"
+            stroke-dasharray="6 4"
+          />
+          <text
+            x="750"
+            y="72"
+            fill="#7dd3fc"
+            font-family="JetBrains Mono, monospace"
+            font-size="10"
+            letter-spacing="2"
+          >TRUST: HSM</text>
+
+          <path
+            id="flow-path"
+            d="M70 140 H 800"
+            stroke="url(#path-grad)"
+            stroke-width="2"
+            stroke-linecap="round"
+            fill="none"
+            opacity="0.55"
+            stroke-dasharray="4 6"
+          />
+
+          <circle r="6" fill="#7dd3fc" filter="url(#node-glow)">
+            <animateMotion dur="6s" repeatCount="indefinite" rotate="auto">
+              <mpath href="#flow-path" />
+            </animateMotion>
+            <animate
+              attributeName="opacity"
+              values="0;1;1;0"
+              keyTimes="0;0.1;0.9;1"
+              dur="6s"
+              repeatCount="indefinite"
+            />
+          </circle>
+
+          {
+            stages.map((s, idx) => (
+              <g>
+                <circle
+                  cx={s.x}
+                  cy={140}
+                  r="22"
+                  fill="rgba(15,23,42,0.95)"
+                  stroke={idx === stages.length - 1 ? "#7dd3fc" : "rgba(148,163,184,0.4)"}
+                  stroke-width={idx === stages.length - 1 ? 2 : 1}
+                />
+                <text
+                  x={s.x}
+                  y={144}
+                  text-anchor="middle"
+                  fill="#e2e8f0"
+                  font-family="JetBrains Mono, monospace"
+                  font-size="10"
+                >
+                  {String(idx + 1).padStart(2, "0")}
+                </text>
+                <text
+                  x={s.x}
+                  y={102}
+                  text-anchor="middle"
+                  fill="#f8fafc"
+                  font-family="Inter, sans-serif"
+                  font-size="13"
+                  font-weight="600"
+                >
+                  {s.label}
+                </text>
+                <text
+                  x={s.x}
+                  y={188}
+                  text-anchor="middle"
+                  fill="#94a3b8"
+                  font-family="Inter, sans-serif"
+                  font-size="11"
+                >
+                  {s.sub}
+                </text>
+              </g>
+            ))
+          }
+
+          <g>
+            <line
+              x1="70"
+              y1="245"
+              x2="730"
+              y2="245"
+              stroke="rgba(148,163,184,0.25)"
+              stroke-width="1"
+              stroke-dasharray="2 4"
+            />
+            <text
+              x="70"
+              y="262"
+              fill="#94a3b8"
+              font-family="Inter, sans-serif"
+              font-size="11"
+            >
+              Append-only audit log (JSONL + optional HMAC chain)
+            </text>
+            <text
+              x="730"
+              y="262"
+              text-anchor="end"
+              fill="#94a3b8"
+              font-family="Inter, sans-serif"
+              font-size="11"
+            >
+              Prometheus /metrics
+            </text>
+          </g>
+
+          <g>
+            <text
+              x="450"
+              y="298"
+              text-anchor="middle"
+              fill="#64748b"
+              font-family="JetBrains Mono, monospace"
+              font-size="10"
+              letter-spacing="3"
+            >
+              FAIL-CLOSED · DENY-BY-DEFAULT · NO PLAINTEXT EGRESS
+            </text>
+          </g>
+        </svg>
+      </div>
+
+      <div class="mt-5 grid gap-3 border-t border-white/10 pt-5 sm:grid-cols-3">
+        <div class="rounded-lg border border-white/5 bg-white/[0.02] p-4">
+          <div
+            class="font-mono text-[10px] uppercase tracking-widest text-accent-300"
+          >
+            01 — host plane
+          </div>
+          <p class="mt-2 text-sm text-fog-200">
+            HTTP, policy, replay cache, audit log, metrics. Runs as a
+            hardened systemd service on a dedicated user with
+            <code class="font-mono text-accent-300">NoNewPrivileges</code>,
+            <code class="font-mono text-accent-300">PrivateTmp</code>, and
+            <code class="font-mono text-accent-300">SystemCallFilter</code>.
+          </p>
+        </div>
+        <div class="rounded-lg border border-white/5 bg-white/[0.02] p-4">
+          <div
+            class="font-mono text-[10px] uppercase tracking-widest text-accent-300"
+          >
+            02 — hsm plane
+          </div>
+          <p class="mt-2 text-sm text-fog-200">
+            Signing keys live only inside the YubiHSM2. The runtime auth key
+            can sign but cannot export or mutate keys. Backups are
+            wrap-encrypted under a key that never leaves the device.
+          </p>
+        </div>
+        <div class="rounded-lg border border-white/5 bg-white/[0.02] p-4">
+          <div
+            class="font-mono text-[10px] uppercase tracking-widest text-accent-300"
+          >
+            03 — observability
+          </div>
+          <p class="mt-2 text-sm text-fog-200">
+            Every accepted and denied signature lands in the JSONL audit log
+            with optional HMAC chaining. Prometheus exports counters for
+            sign attempts, denials, and policy reasons.
+          </p>
+        </div>
+      </div>
+
+      <div
+        class="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-fog-300"
+      >
+        <span>
+          Add a chain by implementing the
+          <code class="font-mono text-accent-300">ChainSigner</code> trait —
+          policy, audit, and metrics are chain-agnostic.
+        </span>
+        <a
+          href={`${baseUrl}/reference/architecture/`}
+          class="inline-flex items-center gap-1 font-medium text-accent-300 hover:text-accent-200"
+        >
+          Full architecture
+          <span aria-hidden="true">→</span>
+        </a>
+      </div>
+    </div>
+  </div>
+</section>

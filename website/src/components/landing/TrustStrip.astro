@@ -1,0 +1,44 @@
+---
+const chips = [
+  { label: "YubiHSM2-backed", tone: "accent" },
+  { label: "Apache-2.0", tone: "neutral" },
+  { label: "Solana + Cosmos", tone: "accent" },
+  { label: "Deny-by-default policy", tone: "neutral" },
+  { label: "Append-only audit log", tone: "neutral" },
+  { label: "Prometheus metrics", tone: "neutral" },
+  { label: "OpenAPI v1 source of truth", tone: "neutral" },
+  { label: "Runs on a Raspberry Pi", tone: "accent" },
+];
+---
+
+<section
+  aria-label="Trust signals"
+  class="border-y border-white/5 bg-ink-900/40"
+>
+  <div class="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
+    <div class="flex flex-wrap items-center justify-center gap-2.5">
+      {
+        chips.map((chip) => (
+          <span
+            class:list={[
+              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium",
+              chip.tone === "accent"
+                ? "border-accent-500/30 bg-accent-500/10 text-accent-300"
+                : "border-white/10 bg-white/5 text-fog-200",
+            ]}
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+              <circle
+                cx="5"
+                cy="5"
+                r="3"
+                fill={chip.tone === "accent" ? "#7dd3fc" : "#94a3b8"}
+              />
+            </svg>
+            {chip.label}
+          </span>
+        ))
+      }
+    </div>
+  </div>
+</section>

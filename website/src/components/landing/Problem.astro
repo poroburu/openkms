@@ -1,0 +1,93 @@
+---
+const problems = [
+  {
+    eyebrow: "Threat #1",
+    title: "Mnemonics in `.env`",
+    body: "Anyone who reads the host reads the seed. One leaked file, one stolen backup, one curious sysadmin — and the treasury is gone.",
+    icon: "leak",
+  },
+  {
+    eyebrow: "Threat #2",
+    title: "Unsupervised strategies",
+    body: "A buggy or compromised agent can drain an account in seconds. Spend caps and allowlists shouldn't live inside the same process that builds the trade.",
+    icon: "bot",
+  },
+  {
+    eyebrow: "Threat #3",
+    title: "Custody you don't own",
+    body: "Cloud custody and cloud KMS put your keys behind someone else's policy, someone else's audit log, and someone else's outage page.",
+    icon: "cloud",
+  },
+];
+---
+
+<section class="relative" aria-labelledby="problem-heading">
+  <div class="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+    <div class="reveal mx-auto max-w-3xl text-center">
+      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-rose-300">
+        The problem
+      </p>
+      <h2
+        id="problem-heading"
+        class="mt-3 text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl"
+      >
+        Hot wallets are a liability.
+      </h2>
+      <p class="mt-4 text-balance text-lg text-fog-200">
+        Every drained validator, every rug pull, every "compromised hot
+        wallet" post-mortem traces back to the same mistake: keys lived next
+        to the code that uses them.
+      </p>
+    </div>
+
+    <div class="mt-12 grid gap-5 md:grid-cols-3">
+      {
+        problems.map((p) => (
+          <div class="reveal group relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-ink-900/80 to-ink-800/40 p-6 transition hover:border-rose-400/40">
+            <div class="absolute inset-0 -z-10 opacity-0 transition group-hover:opacity-100">
+              <div class="absolute -inset-12 bg-[radial-gradient(20rem_10rem_at_30%_0%,rgba(244,63,94,0.18),transparent_70%)]" />
+            </div>
+            <div class="flex h-10 w-10 items-center justify-center rounded-lg border border-rose-400/30 bg-rose-500/10 text-rose-300">
+              {p.icon === "leak" && (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M12 2v4" />
+                  <path d="M5 9c0-2 3-3 7-3s7 1 7 3v9a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V9Z" />
+                  <path d="M9 13c0 2 1.5 3 3 3s3-1 3-3" />
+                </svg>
+              )}
+              {p.icon === "bot" && (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="4" y="7" width="16" height="12" rx="3" />
+                  <path d="M9 12v.01M15 12v.01" />
+                  <path d="M12 3v4" />
+                  <path d="M2 14h2M20 14h2" />
+                </svg>
+              )}
+              {p.icon === "cloud" && (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M17 18a4 4 0 0 0 0-8 6 6 0 0 0-11.6-1.5A4 4 0 0 0 6 18Z" />
+                  <path d="M9 14l3 3 3-3" />
+                </svg>
+              )}
+            </div>
+            <p class="mt-5 text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-300/80">
+              {p.eyebrow}
+            </p>
+            <h3 class="mt-1 text-lg font-semibold text-white">
+              {p.title.split("`").map((seg, i) =>
+                i % 2 === 1 ? (
+                  <code class="rounded bg-white/10 px-1.5 py-0.5 font-mono text-[0.85em] text-accent-300">
+                    {seg}
+                  </code>
+                ) : (
+                  <span>{seg}</span>
+                ),
+              )}
+            </h3>
+            <p class="mt-2 text-sm text-fog-200">{p.body}</p>
+          </div>
+        ))
+      }
+    </div>
+  </div>
+</section>
