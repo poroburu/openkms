@@ -1,4 +1,9 @@
-# Publish the Astro/Starlight docs website to GitHub Pages.
+# Publish the openKMS website to GitHub Pages.
+#
+# The site is a hybrid: a bespoke Tailwind-powered landing page at
+# `website/src/pages/index.astro` (served at `/openkms/`) plus the
+# Astro/Starlight docs collection under `website/src/content/docs/`.
+# `npm run build` produces both in `website/dist/`.
 name: Pages
 
 on:
@@ -46,6 +51,29 @@ jobs:
       - name: Build site
         working-directory: website
         run: npm run build
+
+      - name: Verify landing page and docs rendered
+        working-directory: website
+        run: |
+          set -euo pipefail
+
+          # Bespoke landing page lives at /openkms/ → dist/index.html
+          test -f dist/index.html
+          grep -q "Your trading agent shouldn't hold your" dist/index.html
+          grep -q "Run it on a Pi today" dist/index.html
+          grep -q "/sign/solana" dist/index.html
+          grep -q "openclaw-heading" dist/index.html
+          grep -q "comparison-heading" dist/index.html
+
+          # Tailwind preflight must stay scoped to the landing page only.
+          # Docs pages are emitted by Starlight and must not import the
+          # marketing stylesheet.
+          test -f dist/overview/index.html
+          test -f dist/reference/http-api/index.html
+          if grep -q "index@_@astro" dist/overview/index.html; then
+            echo "Marketing stylesheet leaked into Starlight docs page" >&2
+            exit 1
+          fi
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
