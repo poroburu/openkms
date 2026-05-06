@@ -23,6 +23,15 @@ Factory-reset and provision the HSM from that mnemonic:
 ./target/mock-release/openkms setup --mnemonic-file /secure/usb/mnemonic.txt
 ```
 
+Derive the runtime signer password that `[hsm].password_file` in
+`config.toml` points at:
+
+```bash
+./target/mock-release/openkms ceremony print-signer-password \
+  --mnemonic-file /secure/usb/mnemonic.txt > /etc/openkms/hsm-password
+chmod 600 /etc/openkms/hsm-password
+```
+
 Provision a signing key. This example imports a deterministic Cosmos key derived
 from the ceremony mnemonic:
 
@@ -34,6 +43,13 @@ from the ceremony mnemonic:
   --path "m/44'/118'/0'/0/0" \
   --mnemonic-file /secure/usb/mnemonic.txt
 ```
+
+`keys provision` and `keys generate` create asymmetric keys, which the signer
+auth key (slot 3) is intentionally not allowed to do. Passing `--mnemonic-file`
+makes the CLI authenticate as the provisioner (slot 2) for the duration of the
+command. To use a stored provisioner password instead, pass
+`--auth-key-id 2` on the global CLI and configure that password through the
+normal `[hsm].password_file` mechanism.
 
 Back up every signing key to a wrap-encrypted blob:
 
@@ -58,6 +74,9 @@ set -euo pipefail
 cargo build --profile mock-release
 ./target/mock-release/openkms --mock new-mnemonic > /secure/usb/mnemonic.txt
 ./target/mock-release/openkms setup --mnemonic-file /secure/usb/mnemonic.txt
+./target/mock-release/openkms ceremony print-signer-password \
+  --mnemonic-file /secure/usb/mnemonic.txt > /etc/openkms/hsm-password
+chmod 600 /etc/openkms/hsm-password
 ./target/mock-release/openkms keys provision \
   --label cosmos-hub-0 \
   --chain cosmos \

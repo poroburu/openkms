@@ -1,41 +1,79 @@
 ---
 title: Overview
-description: What openKMS is and the guarantees it is designed to provide.
+description: Deny-by-default signing for Solana and Cosmos, backed by a YubiHSM2 you own.
 ---
 
 **Docs path:** Start / Overview
 
-openKMS is a YubiHSM2-backed transaction signer for Cosmos and Solana. It is
-designed for a small operator setup, such as a Raspberry Pi signing for an
-automated trading strategy, where the strategy can request signatures but
-cannot extract raw key material.
+openKMS is a deny-by-default signing API for Solana and Cosmos, backed by a
+YubiHSM2 you actually own. Autonomous strategies (the kind of trading agents
+[Openclaw](/openkms/guides/openclaw-integration/) is built around) request
+signatures over plain HTTP. Per-key policy stops the bad trades before the
+hardware ever touches them.
 
-The current `0.1.0-rc.1` release is a stable prototype snapshot: small,
-deny-by-default, and explicit about the security boundary between transaction
-construction, policy evaluation, and HSM signing.
+Private keys never leave the YubiHSM2. The runtime auth key the service binds
+as can sign, but cannot export or mutate keys. There is no plaintext egress.
+
+The `0.1.0-rc.1` release is a stable prototype snapshot: small,
+fail-closed, designed for a homelab Raspberry Pi that signs for a strategy.
+
+## Five gates between the strategy and your keys
+
+Every signing request crosses these layers in order. Each is fail-closed and
+emits to the audit log.
 
 ```text
-Openclaw strategy
-  -> HTTP + bearer token
-  -> openKMS axum server
-  -> policy, replay cache, audit log, metrics
-  -> yubihsm-connector
-  -> YubiHSM2
+Strategy --> Auth --> Decode --> Policy --> Replay --> YubiHSM2
+                                                           |
+                                                       Signature
 ```
 
-## Core Capabilities
+1. **Auth** — bearer token in `signer_token_file`; admin token is separate.
+2. **Decode** — chain-specific (Solana `VersionedMessage`, Cosmos `SignDoc`).
+3. **Policy** — rate limits, per-tx and rolling daily caps, program / message
+   / recipient allowlists, kill switch.
+4. **Replay** — cache for deterministic signatures over a configured window.
+5. **YubiHSM2** — sign inside hardware. Append-only audit log + Prometheus
+   counters update on accept and on every denial.
 
-- HSM-only signing for Ed25519 Solana keys and secp256k1 Cosmos keys.
-- Deterministic setup ceremony from one BIP-39 mnemonic.
-- Per-key policy with rate limits, amount caps, allowlists, and a kill switch.
-- Append-only JSONL audit log with optional HMAC chaining.
-- Prometheus metrics on `/metrics`.
-- Chain-agnostic core: add a chain by implementing the Rust `ChainSigner` trait.
+## Trust split
 
-## Documentation Map
+- **Host plane** runs the HTTP server, policy, replay cache, audit log, and
+  metrics on a hardened systemd unit.
+- **HSM plane** holds signing keys, the wrap key, and the runtime auth key
+  inside the YubiHSM2.
 
-- [Quick Start](/openkms/guides/quick-start/) covers local build, ceremony, key provisioning, backup, and service start.
-- [Security Model](/openkms/concepts/security-model/) explains what the HSM does and does not protect.
-- [Configuration](/openkms/guides/configuration/) describes the canonical TOML shape.
-- [HTTP API](/openkms/reference/http-api/) documents the public routes and links to generated OpenAPI.
-- [Deployment](/openkms/operations/deployment/) points at the checked-in systemd and host hardening runbook.
+A privileged attacker on the host can ask the connector for signatures within
+the policy. Policy is the blast-radius bound; the HSM is the key-egress bound.
+
+## Documentation map
+
+- [Quick Start](/openkms/guides/quick-start/) — local build, ceremony, key
+  provisioning, backup, and service start.
+- [Configuration](/openkms/guides/configuration/) — every block in the
+  canonical TOML.
+- [Policy Authoring](/openkms/guides/policy-authoring/) — how the policy
+  engine evaluates a signing request.
+- [Openclaw Integration](/openkms/guides/openclaw-integration/) — how a
+  trading agent should call openKMS as a signing boundary.
+- [Security Model](/openkms/concepts/security-model/) — what the HSM does and
+  does not protect.
+- [Deployment](/openkms/operations/deployment/) — systemd, host hardening,
+  reverse proxy.
+- [Backup and Restore](/openkms/operations/backup-restore/) — wrap-encrypted
+  recovery from the ceremony mnemonic.
+- [Testing and Automation](/openkms/operations/testing/) — local commands and
+  CI lanes.
+- [HTTP API](/openkms/reference/http-api/) — public routes and link to the
+  generated OpenAPI.
+- [Architecture](/openkms/reference/architecture/) — module layout and
+  request flow.
+
+## Source of truth
+
+Documentation describes these artifacts; it is never authoritative on its own.
+
+- HTTP API: [`openapi/openkms.v1.json`](https://github.com/poroburu/openkms/blob/main/openapi/openkms.v1.json) (CI rebuilds and diffs it from [`src/openapi.rs`](https://github.com/poroburu/openkms/blob/main/src/openapi.rs)).
+- Config: [`examples/config.toml`](https://github.com/poroburu/openkms/blob/main/examples/config.toml) (parsed and `.validate()`-checked in [`tests/docs_drift.rs`](https://github.com/poroburu/openkms/blob/main/tests/docs_drift.rs)).
+- Agent guidance: [`.agents/skills/openkms/SKILL.md`](https://github.com/poroburu/openkms/blob/main/.agents/skills/openkms/SKILL.md).
+- Contributor / CI runbooks: [`docs/remote-e2e.md`](https://github.com/poroburu/openkms/blob/main/docs/remote-e2e.md), [`docs/broadcast-e2e.md`](https://github.com/poroburu/openkms/blob/main/docs/broadcast-e2e.md), [`deploy/README.md`](https://github.com/poroburu/openkms/blob/main/deploy/README.md).

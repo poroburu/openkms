@@ -12,12 +12,51 @@ is fail-closed and runs before the HSM signs.
 
 1. `enabled = false` or an admin-set kill switch denies the request.
 2. Rate limits consume tokens for `max_signs_per_minute`, `max_signs_per_hour`, and `max_signs_per_day`.
-3. Per-transaction caps reject outgoing transfer totals above `per_tx_cap_lamports`.
-4. Daily caps reject once accepted signed transfer totals exceed `daily_cap_lamports` in the rolling window.
-5. Allowlists check invoked Solana programs, Cosmos message type URLs, and recipients.
+3. Per-transaction and rolling-daily caps reject transfers that exceed the
+   configured limits (chain-specific shape — see below).
+4. Allowlists check invoked Solana programs, Cosmos message type URLs, and
+   recipients.
 
-Empty allowlists are meaningful. For example, `allowed_messages = []` means no
-Cosmos message types are permitted from that key.
+Empty allowlists are meaningful. A Solana key with no `allowed_programs` and a
+Cosmos key with no `allowed_messages` will deny every signing request.
+
+## Caps are chain-shaped
+
+Cap field names share a `_lamports` suffix for historical reasons. The shapes
+operators care about differ per chain. See
+[Configuration](/openkms/guides/configuration/) for the full schema.
+
+### Solana keys
+
+Use `per_tx_cap_lamports` and `daily_cap_lamports` directly on the key policy.
+The values are decimal strings of native lamports, summed across outgoing
+transfers in the signed transaction:
+
+```toml
+[keys.policy]
+per_tx_cap_lamports = "5000000000"
+daily_cap_lamports  = "20000000000"
+```
+
+### Cosmos keys
+
+Cosmos messages carry denom-aware coin amounts, so caps live on the message
+allowlist instead. Each `[[allowed_messages]]` entry can pin a denom-keyed
+`per_tx_cap`:
+
+```toml
+[[keys.policy.allowed_messages]]
+type_url           = "/cosmos.bank.v1beta1.MsgSend"
+allowed_recipients = ["cosmos1..."]
+per_tx_cap         = { uatom = "500000000" }
+```
+
+`per_tx_cap_lamports` and `daily_cap_lamports` on Cosmos keys still parse and
+apply to anything the engine measures in lamport-equivalent units, but
+denom-keyed `per_tx_cap` is the source of truth for `MsgSend` and similar
+amount-bearing messages. Authoring policy without a `per_tx_cap` block on a
+Cosmos `MsgSend` allowlist entry is a drift signal — every accepted transfer
+will pass without an amount check.
 
 ## Operational Notes
 

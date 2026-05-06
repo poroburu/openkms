@@ -10,22 +10,34 @@ to shared security and observability layers.
 
 ```text
 src/
-├── main.rs        CLI entry
-├── config.rs      TOML loader, permission checks, validation
-├── hsm.rs         YubiHSM client wrapper and mock HSM support
-├── derive.rs      BIP-39, BIP-32, SLIP-10, and HKDF ceremony
-├── sig.rs         ECDSA DER/compact conversion and low-s normalization
+├── lib.rs           Re-exports for tests and the OpenAPI generator
+├── main.rs          CLI entry and `openkms run`
+├── cli_keys.rs      `openkms keys generate / provision`
+├── cli_ceremony.rs  `openkms ceremony print-*-password / print-derived-signing-secrets`
+├── cli_backup.rs    `openkms backup` and `openkms restore`
+├── config.rs        TOML loader, permission checks, validation
+├── hsm.rs           YubiHSM client wrapper and mock HSM support
+├── derive.rs        BIP-39, BIP-32, SLIP-10, and HKDF ceremony
+├── sig.rs           ECDSA DER/compact conversion and low-s normalization
 ├── chain/
-│   ├── mod.rs     ChainSigner trait, Intent trait, Chain enum
-│   ├── solana.rs  VersionedMessage decode and Ed25519 signing
-│   └── cosmos.rs  SignDoc decode and secp256k1 signing
-├── policy/        Rate limits, caps, allowlists, kill switch
-├── audit.rs       Append-only JSONL with optional HMAC chain
-├── metrics.rs     Prometheus counters and gauges
-├── replay.rs      Replay cache for deterministic signatures
-├── admin.rs       Persistent admin kill-switch flags
-└── server.rs      Axum router
+│   ├── mod.rs       ChainSigner trait, Intent trait, Chain enum
+│   ├── solana.rs    VersionedMessage decode and Ed25519 signing
+│   └── cosmos.rs    SignDoc decode and secp256k1 signing
+├── policy/          Rate limits, caps, allowlists, kill switch
+├── audit.rs         Append-only JSONL with optional HMAC chain
+├── metrics.rs       Prometheus counters and gauges
+├── replay.rs        Replay cache for deterministic signatures
+├── admin.rs         Persistent admin kill-switch flags + policy overlays
+├── openapi.rs       HTTP API source of truth (CI rebuilds and diffs it)
+├── server.rs        Axum router
+└── bin/
+    ├── generate_openapi.rs              prints openapi/openkms.v1.json
+    └── generate_remote_e2e_request.rs   helper for the remote-e2e workflow
 ```
+
+`openapi.rs` is the source of truth for the HTTP API. CI runs
+`cargo run --bin generate_openapi` and fails on drift against
+`openapi/openkms.v1.json`.
 
 ## Request Flow
 
