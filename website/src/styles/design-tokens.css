@@ -1,0 +1,21 @@
+/* Shared with marketing @theme — keep in sync when palette changes */
+:root {
+  --okms-ink-950: #050811;
+  --okms-ink-900: #0b1220;
+  --okms-ink-800: #0f172a;
+  --okms-ink-700: #131c33;
+  --okms-ink-600: #1e293b;
+  --okms-ink-500: #334155;
+  --okms-fog-200: #cbd5e1;
+  --okms-fog-300: #94a3b8;
+  --okms-fog-400: #64748b;
+  --okms-accent-500: #38bdf8;
+  --okms-accent-400: #7dd3fc;
+  --okms-accent-600: #0ea5e9;
+  --okms-danger-500: #f43f5e;
+  --okms-warn-500: #fbbf24;
+  --okms-good-500: #34d399;
+
+  --okms-shadow-glow: 0 0 0 1px rgba(56, 189, 248, 0.18), 0 18px 48px -12px rgba(56, 189, 248, 0.32);
+  --okms-shadow-card: 0 16px 36px -18px rgba(0, 0, 0, 0.55);
+}

@@ -1,27 +1,28 @@
+@import "./design-tokens.css";
 @import "tailwindcss";
 
 @theme {
-  --color-ink-950: #050811;
-  --color-ink-900: #0b1220;
-  --color-ink-800: #0f172a;
-  --color-ink-700: #131c33;
-  --color-ink-600: #1e293b;
-  --color-ink-500: #334155;
-  --color-fog-200: #cbd5e1;
-  --color-fog-300: #94a3b8;
-  --color-fog-400: #64748b;
-  --color-accent-500: #38bdf8;
-  --color-accent-400: #7dd3fc;
-  --color-accent-600: #0ea5e9;
-  --color-danger-500: #f43f5e;
-  --color-warn-500: #fbbf24;
-  --color-good-500: #34d399;
+  --color-ink-950: var(--okms-ink-950);
+  --color-ink-900: var(--okms-ink-900);
+  --color-ink-800: var(--okms-ink-800);
+  --color-ink-700: var(--okms-ink-700);
+  --color-ink-600: var(--okms-ink-600);
+  --color-ink-500: var(--okms-ink-500);
+  --color-fog-200: var(--okms-fog-200);
+  --color-fog-300: var(--okms-fog-300);
+  --color-fog-400: var(--okms-fog-400);
+  --color-accent-500: var(--okms-accent-500);
+  --color-accent-400: var(--okms-accent-400);
+  --color-accent-600: var(--okms-accent-600);
+  --color-danger-500: var(--okms-danger-500);
+  --color-warn-500: var(--okms-warn-500);
+  --color-good-500: var(--okms-good-500);
 
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
-  --shadow-glow: 0 0 0 1px rgba(56, 189, 248, 0.18), 0 18px 48px -12px rgba(56, 189, 248, 0.32);
-  --shadow-card: 0 16px 36px -18px rgba(0, 0, 0, 0.55);
+  --shadow-glow: var(--okms-shadow-glow);
+  --shadow-card: var(--okms-shadow-card);
 }
 
 @layer base {
