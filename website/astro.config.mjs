@@ -65,12 +65,16 @@ export default defineConfig({
           label: 'Reference',
           items: [
             { label: 'HTTP API', slug: 'reference/http-api' },
-            {
-              label: 'OpenAPI spec',
-              link: 'https://github.com/poroburu/openkms/blob/main/openapi/openkms.v1.json',
-            },
             { label: 'Architecture', slug: 'reference/architecture' },
           ],
+        },
+        {
+          label: 'OpenAPI spec',
+          link: 'https://github.com/poroburu/openkms/blob/main/openapi/openkms.v1.json',
+          attrs: {
+            class: 'okms-sidebar-external',
+            title: 'Opens the OpenAPI JSON on GitHub (leaves this site)',
+          },
         },
       ],
     }),
