@@ -26,14 +26,18 @@ GitHub Pages workflow. Start there for long-form guides:
 - [Security model](website/src/content/docs/concepts/security-model.md)
 - [Configuration](website/src/content/docs/guides/configuration.md)
 - [Policy authoring](website/src/content/docs/guides/policy-authoring.md)
+- [Openclaw integration](website/src/content/docs/guides/openclaw-integration.md)
+- [Deployment](website/src/content/docs/operations/deployment.md)
+- [Backup and restore](website/src/content/docs/operations/backup-restore.md)
+- [Testing and automation](website/src/content/docs/operations/testing.md)
 - [HTTP API](website/src/content/docs/reference/http-api.md)
 - [Architecture](website/src/content/docs/reference/architecture.md)
 
-Operator runbooks remain at stable repository paths:
+Operator and contributor runbooks remain at stable repository paths:
 
-- [`docs/remote-e2e.md`](docs/remote-e2e.md)
-- [`docs/broadcast-e2e.md`](docs/broadcast-e2e.md)
-- [`deploy/README.md`](deploy/README.md)
+- [`deploy/README.md`](deploy/README.md) — operator install runbook
+- [`docs/remote-e2e.md`](docs/remote-e2e.md) — contributor / CI-maintainer runbook for `remote-e2e.yml`
+- [`docs/broadcast-e2e.md`](docs/broadcast-e2e.md) — contributor / CI-maintainer runbook for `broadcast-e2e.yml`
 
 The canonical example configuration is [`examples/config.toml`](examples/config.toml).
 The generated HTTP API spec is [`openapi/openkms.v1.json`](openapi/openkms.v1.json).

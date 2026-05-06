@@ -68,28 +68,45 @@ fn ci_paths_cover_behavior_affecting_files() {
     }
 }
 
+/// Consumer-facing docs must exist AND be linked from the README so the
+/// project's "Documentation" section stays an honest map.
 #[test]
-fn documented_source_files_exist() {
+fn consumer_docs_exist_and_are_indexed_in_readme() {
     for path in [
-        "examples/config.toml",
+        "website/src/content/docs/overview.md",
+        "website/src/content/docs/guides/quick-start.md",
+        "website/src/content/docs/guides/configuration.md",
+        "website/src/content/docs/guides/policy-authoring.md",
+        "website/src/content/docs/guides/openclaw-integration.md",
+        "website/src/content/docs/operations/deployment.md",
+        "website/src/content/docs/operations/backup-restore.md",
+        "website/src/content/docs/operations/testing.md",
+        "website/src/content/docs/concepts/security-model.md",
+        "website/src/content/docs/reference/architecture.md",
+        "website/src/content/docs/reference/http-api.md",
+    ] {
+        assert!(repo_path(path).exists(), "missing consumer doc: {path}");
+        assert!(README.contains(path), "README should point at {path}");
+    }
+}
+
+/// Contributor / CI-maintainer truth: must exist, but README mention is not
+/// required (these are referenced from the website's contributor sections and
+/// from the workflows themselves).
+#[test]
+fn contributor_runbooks_exist() {
+    for path in [
         "docs/remote-e2e.md",
         "docs/broadcast-e2e.md",
         "deploy/README.md",
-        "openapi/openkms.v1.json",
         ".agents/skills/openkms/SKILL.md",
-        "website/src/content/docs/overview.md",
-        "website/src/content/docs/guides/quick-start.md",
-        "website/src/content/docs/concepts/security-model.md",
-        "website/src/content/docs/guides/configuration.md",
-        "website/src/content/docs/guides/policy-authoring.md",
-        "website/src/content/docs/reference/http-api.md",
-        "website/src/content/docs/reference/architecture.md",
+        "examples/config.toml",
+        "openapi/openkms.v1.json",
         "scripts/e2e_defaults.sh",
         ".github/workflows/remote-e2e.yml",
         ".github/workflows/broadcast-e2e.yml",
     ] {
-        assert!(repo_path(path).exists(), "missing documented path: {path}");
-        assert!(README.contains(path), "README should point at {path}");
+        assert!(repo_path(path).exists(), "missing contributor truth: {path}");
     }
 }
 
