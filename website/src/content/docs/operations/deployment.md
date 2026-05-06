@@ -31,5 +31,7 @@ connector over HTTP, normally on loopback.
 ## Remote E2E
 
 GitHub-hosted remote smoke tests join Tailscale first, then use
-`OPENKMS_BASE_URL` on the tailnet. The full operator runbook stays at
+`OPENKMS_BASE_URL` on the tailnet. The full operator runbook is a
+contributor / CI-maintainer reference and is not required for routine
+operator deployment:
 [`docs/remote-e2e.md`](https://github.com/poroburu/openkms/blob/main/docs/remote-e2e.md).
