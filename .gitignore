@@ -30,3 +30,6 @@ killswitch.json
 /website/node_modules/
 /website/dist/
 /website/.astro/
+
+# Tool / agent output (local only)
+.artifacts/
