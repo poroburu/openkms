@@ -13,6 +13,26 @@ export default defineConfig({
       title: 'openKMS',
       description: 'YubiHSM2-backed transaction signer for Cosmos and Solana.',
       favicon: '/favicon.svg',
+      logo: {
+        alt: 'openKMS',
+        src: './src/assets/logo.svg',
+        replacesTitle: false,
+      },
+      head: [
+        { tag: 'meta', attrs: { name: 'theme-color', content: '#050811' } },
+        { tag: 'link', attrs: { rel: 'preconnect', href: 'https://rsms.me/' } },
+        {
+          tag: 'link',
+          attrs: { rel: 'stylesheet', href: 'https://rsms.me/inter/inter.css' },
+        },
+        {
+          tag: 'link',
+          attrs: {
+            rel: 'stylesheet',
+            href: 'https://cdn.jsdelivr.net/gh/JetBrains/JetBrainsMono/web/css/jetbrains-mono.css',
+          },
+        },
+      ],
       social: [
         {
           icon: 'github',
