@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="brand/logo.svg" alt="openKMS" width="96" height="96" />
+</p>
+
 # openKMS
 
 YubiHSM2-backed transaction signer for **Cosmos** and **Solana**. The

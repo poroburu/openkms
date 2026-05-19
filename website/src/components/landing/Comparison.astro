@@ -93,9 +93,9 @@ const rows = [
 ];
 
 const stateClasses: Record<string, string> = {
-  good: "text-emerald-300",
+  good: "text-good-500",
   ok: "text-fog-200",
-  bad: "text-rose-300/80",
+  bad: "text-danger-500/80",
 };
 ---
 
@@ -145,9 +145,9 @@ const stateClasses: Record<string, string> = {
                     <div
                       class:list={[
                         "text-base font-semibold",
-                        col.tone === "danger" && "text-rose-300",
+                        col.tone === "danger" && "text-danger-500",
                         col.tone === "neutral" && "text-white",
-                        col.tone === "highlight" && "text-accent-300",
+                        col.tone === "highlight" && "text-accent-400",
                       ]}
                     >
                       {col.title}

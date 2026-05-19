@@ -29,7 +29,7 @@
   html,
   body {
     background-color: var(--color-ink-950);
-    color: #e2e8f0;
+    color: var(--okms-fog-200);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;

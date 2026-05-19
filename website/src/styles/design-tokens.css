@@ -1,4 +1,4 @@
-/* Shared with marketing @theme — keep in sync when palette changes */
+/* openKMS design tokens — canonical source (sync to product repos via scripts/sync-brand.sh) */
 :root {
   --okms-ink-950: #050811;
   --okms-ink-900: #0b1220;

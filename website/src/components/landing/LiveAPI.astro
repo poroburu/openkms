@@ -96,15 +96,15 @@ const tiles = [
 
       <div class="flex flex-col gap-5">
         <div
-          class="overflow-hidden rounded-2xl border border-emerald-400/20 bg-emerald-500/[0.04] shadow-card"
+          class="overflow-hidden rounded-2xl border border-good-500/20 bg-good-500/[0.04] shadow-card"
         >
           <div
-            class="flex items-center gap-2 border-b border-emerald-400/20 bg-emerald-500/10 px-4 py-2.5"
+            class="flex items-center gap-2 border-b border-good-500/20 bg-good-500/10 px-4 py-2.5"
           >
-            <span class="rounded bg-emerald-400/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-emerald-300">
+            <span class="rounded bg-good-500/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-good-500">
               200
             </span>
-            <span class="font-mono text-[12px] text-emerald-200">policy passed · HSM signed</span>
+            <span class="font-mono text-[12px] text-fog-200">policy passed · HSM signed</span>
           </div>
           <div class="px-4 py-4 text-[12.5px]">
             <Code code={responseBody} lang="json" theme="github-dark-default" />
@@ -112,15 +112,15 @@ const tiles = [
         </div>
 
         <div
-          class="overflow-hidden rounded-2xl border border-rose-400/20 bg-rose-500/[0.04] shadow-card"
+          class="overflow-hidden rounded-2xl border border-danger-500/20 bg-danger-500/[0.04] shadow-card"
         >
           <div
-            class="flex items-center gap-2 border-b border-rose-400/20 bg-rose-500/10 px-4 py-2.5"
+            class="flex items-center gap-2 border-b border-danger-500/20 bg-danger-500/10 px-4 py-2.5"
           >
-            <span class="rounded bg-rose-400/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-rose-300">
+            <span class="rounded bg-danger-500/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-danger-500">
               403
             </span>
-            <span class="font-mono text-[12px] text-rose-200">policy denied · HSM never touched</span>
+            <span class="font-mono text-[12px] text-fog-200">policy denied · HSM never touched</span>
           </div>
           <div class="px-4 py-4 text-[12.5px]">
             <Code code={denialBody} lang="json" theme="github-dark-default" />

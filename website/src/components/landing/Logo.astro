@@ -1,4 +1,6 @@
 ---
+import logoSrc from "../../../../brand/logo.svg";
+
 interface Props {
   size?: number;
   withText?: boolean;
@@ -8,56 +10,16 @@ const { size = 32, withText = false, class: className = "" } = Astro.props;
 ---
 
 <span class={`inline-flex items-center gap-2 ${className}`}>
-  <svg
+  <img
+    src={logoSrc.src}
     width={size}
     height={size}
-    viewBox="0 0 64 64"
-    role="img"
-    aria-label="openKMS"
+    alt="openKMS"
     class="shrink-0"
-  >
-    <defs>
-      <linearGradient id="okms-bg" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stop-color="#0f172a" />
-        <stop offset="100%" stop-color="#020617" />
-      </linearGradient>
-      <linearGradient id="okms-stroke" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stop-color="#7dd3fc" />
-        <stop offset="100%" stop-color="#0ea5e9" />
-      </linearGradient>
-    </defs>
-    <rect width="64" height="64" rx="14" fill="url(#okms-bg)" />
-    <rect
-      x="1"
-      y="1"
-      width="62"
-      height="62"
-      rx="13"
-      fill="none"
-      stroke="rgba(56,189,248,0.25)"
-      stroke-width="1"
-    />
-    <path
-      d="M21 14v36"
-      fill="none"
-      stroke="url(#okms-stroke)"
-      stroke-width="6.5"
-      stroke-linecap="round"
-    />
-    <path
-      d="M44 15 25 32l19 17"
-      fill="none"
-      stroke="url(#okms-stroke)"
-      stroke-width="6.5"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-    />
-    <circle cx="46" cy="32" r="3.5" fill="#f8fafc" />
-    <circle cx="46" cy="32" r="6" fill="none" stroke="rgba(248,250,252,0.4)" stroke-width="1" />
-  </svg>
+  />
   {
     withText && (
-      <span class="text-base font-semibold tracking-tight text-white">
+      <span class="text-base font-semibold tracking-tight text-accent-400">
         openKMS
       </span>
     )

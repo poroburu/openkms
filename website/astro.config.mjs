@@ -15,7 +15,7 @@ export default defineConfig({
       favicon: '/favicon.svg',
       logo: {
         alt: 'openKMS',
-        src: './src/assets/logo.svg',
+        src: '../brand/logo.svg',
         replacesTitle: false,
       },
       head: [

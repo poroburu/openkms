@@ -20,6 +20,7 @@ on:
       - "docs/**"
       - "deploy/**"
       - "openapi/**"
+      - "brand/**"
       - "website/**"
       - "README.md"
       - "LICENSE"

@@ -11,6 +11,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/pages.yml"
+      - "brand/**"
       - "website/**"
       - "openapi/**"
       - "README.md"
