@@ -33,6 +33,14 @@ impl Chain {
             Chain::Unknown => "unknown",
         }
     }
+
+    pub fn from_str_lenient(s: &str) -> anyhow::Result<Self> {
+        match s.to_lowercase().as_str() {
+            "solana" => Ok(Chain::Solana),
+            "cosmos" => Ok(Chain::Cosmos),
+            other => Err(anyhow::anyhow!("unknown chain {other:?}")),
+        }
+    }
 }
 
 impl fmt::Display for Chain {

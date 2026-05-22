@@ -37,7 +37,6 @@ fn release_metadata_matches_readme() {
 fn example_config_deserializes_and_validates_with_real_secret_paths() {
     let tmp = TempDir::new().expect("tempdir");
     let mut cfg: Config = toml::from_str(EXAMPLE_CONFIG).expect("example config parses");
-    cfg.server.signer_token_file = write_secret(tmp.path(), "signer.token");
     cfg.server.admin_token_file = write_secret(tmp.path(), "admin.token");
     cfg.hsm.password_file = write_secret(tmp.path(), "hsm-password");
     cfg.audit.hmac_key_file = Some(write_secret(tmp.path(), "audit-hmac.key"));

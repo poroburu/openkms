@@ -2,8 +2,14 @@
 # Loopback is correct with a reverse proxy (TLS + GitHub remote-e2e). For a
 # dedicated staging host without a proxy, use 0.0.0.0:PORT and tune systemd; see docs/remote-e2e.md.
 listen             = "127.0.0.1:9443"
-signer_token_file  = "/etc/openkms/signer.token"
 admin_token_file   = "/etc/openkms/admin.token"
+
+[pairing]
+enabled = true
+reveal_addresses = false
+
+[pairing.balance]
+query_timeout_ms = 2000
 inflight_limit     = 64
 replay_window_secs = 120
 

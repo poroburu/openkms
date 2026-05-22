@@ -7,6 +7,7 @@
 mod cli_backup;
 mod cli_ceremony;
 mod cli_keys;
+mod cli_pair;
 
 use std::{
     fs,
@@ -91,6 +92,12 @@ enum Command {
 
     /// Run the signing service.
     Run,
+
+    /// Client-to-key pairing (request, approve, revoke).
+    Pair {
+        #[command(subcommand)]
+        cmd: cli_pair::PairCommand,
+    },
 }
 
 #[derive(clap::Args, Debug)]
@@ -150,6 +157,7 @@ async fn main() -> Result<()> {
         Command::Restore(a) => cli_backup::restore(&ctx, a).await,
         Command::Ceremony { cmd } => cli_ceremony::dispatch(cmd).await,
         Command::Run => run_service(&ctx).await,
+        Command::Pair { cmd } => cli_pair::dispatch(&ctx, cmd).await,
     }
 }
 
@@ -449,7 +457,6 @@ async fn test_cmd(cli: &CliCtx) -> Result<()> {
 
 async fn run_service(cli: &CliCtx) -> Result<()> {
     let cfg = Config::load(&cli.config)?;
-    let signer_token = Config::read_secret_file(&cfg.server.signer_token_file)?;
     let admin_token = Config::read_secret_file(&cfg.server.admin_token_file)?;
     let password = Config::read_hsm_password_file(&cfg.hsm.password_file)?;
     let hsm = if cli.mock {
@@ -463,7 +470,7 @@ async fn run_service(cli: &CliCtx) -> Result<()> {
     };
     // Warm-up: open audit log now so we fail fast if the directory is bad.
     let _ = AuditLog::open(&cfg.audit)?;
-    let state = server::AppState::build(cfg, hsm, signer_token, admin_token).await?;
+    let state = server::AppState::build(cfg, hsm, admin_token).await?;
     server::serve(state).await
 }
 

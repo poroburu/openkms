@@ -29,12 +29,13 @@ use std::{
 use anyhow::{Context, Result, anyhow};
 use axum::{
     Json, Router,
-    extract::{Path as AxumPath, State},
+    extract::{Path as AxumPath, Query, State},
     http::{HeaderMap, StatusCode, header::AUTHORIZATION},
     response::IntoResponse,
-    routing::{get, post},
+    routing::{delete, get, post},
+    Extension,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 use uuid::Uuid;
 
@@ -48,9 +49,20 @@ use crate::{
     config::{Config, KeyDef, KeyPolicy, KeyPolicyPatch},
     hsm::Hsm,
     metrics::Metrics,
+    pairing::{
+        BalanceRanker, PairPollOutcome, PairingStore,
+        http::{
+            admin_approve_pair, admin_list_pair, admin_list_pending, admin_pair_pool,
+            admin_reject_pair, admin_revoke_pair, pair_pool, pair_request,
+        },
+    },
     policy::{DefaultPolicyEngine, PolicyEngine, PolicyError, PolicyRuntimeSnapshot},
     replay::{CachedResponse, ReplayCache},
 };
+
+/// Bearer-authenticated signer scope: the key label bound at pairing time.
+#[derive(Clone, Debug)]
+pub struct PairedLabel(pub String);
 
 /// The application state shared by every handler.
 #[derive(Clone)]
@@ -64,7 +76,8 @@ pub struct AppState {
     pub keys: Arc<HashMap<String, KeyDef>>,
     pub solana_signers: Arc<HashMap<String, Arc<SolanaSigner>>>,
     pub cosmos_signers: Arc<HashMap<String, Arc<CosmosSigner>>>,
-    pub signer_token: Arc<String>,
+    pub pairing: PairingStore,
+    pub balance_ranker: BalanceRanker,
     pub admin_token: Arc<String>,
     pub config: Arc<Config>,
     /// After the first `/health` response is produced, further `/health` calls include `hsm_up`
@@ -76,16 +89,14 @@ pub struct AppState {
 impl AppState {
     /// Build state from a `Config` and an open HSM. Construction touches the
     /// HSM once per key to fetch pubkeys.
-    pub async fn build(
-        config: Config,
-        hsm: Hsm,
-        signer_token: String,
-        admin_token: String,
-    ) -> Result<Self> {
+    pub async fn build(config: Config, hsm: Hsm, admin_token: String) -> Result<Self> {
         let state_dir = config
             .state_dir
             .clone()
             .unwrap_or_else(|| std::path::PathBuf::from("/var/lib/openkms"));
+        let pairing_cfg = config.pairing.clone();
+        let pairing = PairingStore::open(&state_dir, pairing_cfg.clone())?;
+        let balance_ranker = BalanceRanker::new(&pairing_cfg);
         let admin = AdminStore::open(&state_dir)?;
         let effective_config = admin.effective_config(&config).await?;
         let policy = Arc::new(DefaultPolicyEngine::new(&effective_config));
@@ -138,7 +149,8 @@ impl AppState {
             keys: Arc::new(keys),
             solana_signers: Arc::new(solana_signers),
             cosmos_signers: Arc::new(cosmos_signers),
-            signer_token: Arc::new(signer_token),
+            pairing,
+            balance_ranker,
             admin_token: Arc::new(admin_token),
             config: Arc::new(config),
             health_prior_response_sent: Arc::new(AtomicBool::new(false)),
@@ -151,8 +163,6 @@ pub fn router(state: AppState) -> Router {
     let signer_routes = Router::new()
         .route("/sign/solana", post(sign_solana))
         .route("/sign/cosmos", post(sign_cosmos))
-        .route("/policy", get(list_policy))
-        .route("/policy/:label", get(get_policy))
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
             signer_auth_mw,
@@ -168,6 +178,12 @@ pub fn router(state: AppState) -> Router {
                 .patch(admin_patch_policy)
                 .delete(admin_delete_policy),
         )
+        .route("/admin/pair/pending", get(admin_list_pending))
+        .route("/admin/pair", get(admin_list_pair))
+        .route("/admin/pair/pool", get(admin_pair_pool))
+        .route("/admin/pair/:id/approve", post(admin_approve_pair))
+        .route("/admin/pair/:id/reject", post(admin_reject_pair))
+        .route("/admin/pair/:id", delete(admin_revoke_pair))
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
             admin_auth_mw,
@@ -176,6 +192,10 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/keys", get(list_keys))
+        .route("/pair/pool", get(pair_pool))
+        .route("/pair/request", post(pair_request))
+        .route("/policy", get(list_policy))
+        .route("/policy/:label", get(get_policy))
         .route("/metrics", get(metrics_handler))
         .merge(signer_routes)
         .merge(admin_routes)
@@ -223,53 +243,11 @@ async fn health(State(state): State<AppState>) -> impl IntoResponse {
     })
 }
 
-#[derive(Serialize)]
-struct KeySummary {
-    label: String,
-    chain: String,
-    address: String,
-    enabled: bool,
-    object_id: u16,
-    derivation_path: Option<String>,
-}
-
 async fn list_keys(State(state): State<AppState>) -> axum::response::Response {
-    let config = match state.admin.effective_config(&state.config).await {
-        Ok(config) => config,
-        Err(e) => {
-            return json_err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                &format!("policy overlay error: {e}"),
-            );
-        }
-    };
-    let mut out = Vec::new();
-    let flags = state.admin.snapshot().await.enabled;
-    for k in config.keys.iter() {
-        let address = match k.chain {
-            Chain::Solana => state
-                .solana_signers
-                .get(&k.label)
-                .map(|s| s.address.clone())
-                .unwrap_or_default(),
-            Chain::Cosmos => state
-                .cosmos_signers
-                .get(&k.label)
-                .map(|s| s.default_address.clone())
-                .unwrap_or_default(),
-            Chain::Unknown => String::new(),
-        };
-        let enabled = flags.get(&k.label).copied().unwrap_or(k.policy.enabled);
-        out.push(KeySummary {
-            label: k.label.clone(),
-            chain: k.chain.as_str().to_string(),
-            address,
-            enabled,
-            object_id: k.object_id,
-            derivation_path: k.derivation_path.clone(),
-        });
+    match state.pairing.pool_summary(&state.config, &state.admin).await {
+        Ok(pool) => Json(pool).into_response(),
+        Err(e) => json_err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
     }
-    Json(out).into_response()
 }
 
 #[derive(Serialize)]
@@ -290,15 +268,106 @@ struct PolicySnapshotBody {
     overlay: Option<KeyPolicyPatch>,
 }
 
-async fn list_policy(State(state): State<AppState>) -> axum::response::Response {
-    policy_list_response(&state, false).await
+#[derive(Debug, Deserialize)]
+struct PolicyLabelQuery {
+    #[serde(default)]
+    request_id: Option<String>,
+}
+
+#[derive(Serialize)]
+struct PairPollPendingBody {
+    status: &'static str,
+    request_id: String,
+    label: String,
+    expires_at: i64,
+}
+
+#[derive(Serialize)]
+struct PairPollApprovedBody {
+    status: &'static str,
+    request_id: String,
+    label: String,
+    token: String,
+    policy: PolicySnapshotBody,
+}
+
+async fn list_policy(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> axum::response::Response {
+    let Some(tok) = bearer_token(&headers) else {
+        return json_err(StatusCode::UNAUTHORIZED, "bad or missing signer token");
+    };
+    let Some(label) = state.pairing.lookup_token(tok).await else {
+        return json_err(StatusCode::UNAUTHORIZED, "bad or missing signer token");
+    };
+    policy_one_response(&state, &label, false).await
 }
 
 async fn get_policy(
     State(state): State<AppState>,
     AxumPath(label): AxumPath<String>,
+    Query(query): Query<PolicyLabelQuery>,
+    headers: HeaderMap,
 ) -> axum::response::Response {
+    if let Some(request_id) = query.request_id.filter(|s| !s.is_empty()) {
+        return policy_pair_poll(&state, &label, &request_id).await;
+    }
+    let Some(tok) = bearer_token(&headers) else {
+        return json_err(StatusCode::UNAUTHORIZED, "bad or missing signer token");
+    };
+    let Some(paired_label) = state.pairing.lookup_token(tok).await else {
+        return json_err(StatusCode::UNAUTHORIZED, "bad or missing signer token");
+    };
+    if label != paired_label {
+        return json_err(StatusCode::FORBIDDEN, "token not authorized for this key label");
+    }
     policy_one_response(&state, &label, false).await
+}
+
+async fn policy_pair_poll(
+    state: &AppState,
+    label: &str,
+    request_id: &str,
+) -> axum::response::Response {
+    if !state.keys.contains_key(label) {
+        return json_err(StatusCode::NOT_FOUND, "unknown key label");
+    }
+    match state.pairing.poll_pairing_request(request_id, label).await {
+        PairPollOutcome::Pending { expires_at } => Json(PairPollPendingBody {
+            status: "pending",
+            request_id: request_id.to_string(),
+            label: label.to_string(),
+            expires_at,
+        })
+        .into_response(),
+        PairPollOutcome::Ready { token } => {
+            let flags = state.admin.snapshot().await;
+            let Some(snapshot) = state.policy.snapshot(label).await else {
+                return json_err(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "policy state missing key",
+                );
+            };
+            let Some(policy) = policy_body(state, snapshot, false, &flags) else {
+                return json_err(StatusCode::INTERNAL_SERVER_ERROR, "key metadata missing");
+            };
+            Json(PairPollApprovedBody {
+                status: "approved",
+                request_id: request_id.to_string(),
+                label: label.to_string(),
+                token,
+                policy,
+            })
+            .into_response()
+        }
+        PairPollOutcome::NotFound => {
+            json_err(StatusCode::NOT_FOUND, "pairing request not found or already delivered")
+        }
+        PairPollOutcome::LabelMismatch => {
+            json_err(StatusCode::BAD_REQUEST, "request_id does not match key label")
+        }
+    }
 }
 
 async fn admin_list_policy(State(state): State<AppState>) -> axum::response::Response {
@@ -408,11 +477,18 @@ async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse {
 
 async fn sign_solana(
     State(state): State<AppState>,
+    Extension(paired): Extension<PairedLabel>,
     headers: HeaderMap,
     Json(body): Json<SignRequest>,
 ) -> impl IntoResponse {
     let request_id = extract_or_mint_request_id(&headers);
     let label = body.label.clone();
+    if label != paired.0 {
+        return json_err(
+            StatusCode::FORBIDDEN,
+            "token not authorized for this key label",
+        );
+    }
     let key = match state.keys.get(&label).cloned() {
         Some(k) if matches!(k.chain, Chain::Solana) => k,
         Some(_) => {
@@ -435,11 +511,18 @@ async fn sign_solana(
 
 async fn sign_cosmos(
     State(state): State<AppState>,
+    Extension(paired): Extension<PairedLabel>,
     headers: HeaderMap,
     Json(body): Json<SignRequest>,
 ) -> impl IntoResponse {
     let request_id = extract_or_mint_request_id(&headers);
     let label = body.label.clone();
+    if label != paired.0 {
+        return json_err(
+            StatusCode::FORBIDDEN,
+            "token not authorized for this key label",
+        );
+    }
     let key = match state.keys.get(&label).cloned() {
         Some(k) if matches!(k.chain, Chain::Cosmos) => k,
         Some(_) => {
@@ -701,12 +784,18 @@ async fn reload_effective_policy(state: &AppState) -> Result<()> {
 
 async fn signer_auth_mw(
     State(state): State<AppState>,
-    req: axum::extract::Request,
+    mut req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
-    match bearer_token(req.headers()) {
-        Some(tok) if tok == state.signer_token.as_str() => next.run(req).await,
-        _ => json_err(StatusCode::UNAUTHORIZED, "bad or missing signer token"),
+    let Some(tok) = bearer_token(req.headers()) else {
+        return json_err(StatusCode::UNAUTHORIZED, "bad or missing signer token");
+    };
+    match state.pairing.lookup_token(tok).await {
+        Some(label) => {
+            req.extensions_mut().insert(PairedLabel(label));
+            next.run(req).await
+        }
+        None => json_err(StatusCode::UNAUTHORIZED, "bad or missing signer token"),
     }
 }
 
@@ -765,7 +854,6 @@ mod tests {
         Config {
             server: crate::config::ServerConfig {
                 listen: "127.0.0.1:0".into(),
-                signer_token_file: "/tmp/x".into(),
                 admin_token_file: "/tmp/x".into(),
                 inflight_limit: 1,
                 replay_window_secs: 1,
@@ -781,6 +869,7 @@ mod tests {
             },
             cosmos: Default::default(),
             state_dir: Some(std::env::temp_dir().join("openkms-test-state")),
+            pairing: Default::default(),
             keys: vec![],
         }
     }
@@ -788,7 +877,7 @@ mod tests {
     #[tokio::test]
     async fn health_endpoint_reports_hsm_up() {
         let hsm = Hsm::open_mock(1, b"password").unwrap();
-        let state = AppState::build(minimal_config(), hsm, "s".into(), "a".into())
+        let state = AppState::build(minimal_config(), hsm, "a".into())
             .await
             .unwrap();
         let app = router(state);
@@ -829,7 +918,7 @@ mod tests {
     #[tokio::test]
     async fn metrics_endpoint_returns_prometheus_text() {
         let hsm = Hsm::open_mock(1, b"password").unwrap();
-        let state = AppState::build(minimal_config(), hsm, "s".into(), "a".into())
+        let state = AppState::build(minimal_config(), hsm, "a".into())
             .await
             .unwrap();
         let app = router(state);
@@ -848,7 +937,7 @@ mod tests {
     #[tokio::test]
     async fn sign_solana_requires_bearer() {
         let hsm = Hsm::open_mock(1, b"password").unwrap();
-        let state = AppState::build(minimal_config(), hsm, "signer-token".into(), "a".into())
+        let state = AppState::build(minimal_config(), hsm, "a".into())
             .await
             .unwrap();
         let app = router(state);

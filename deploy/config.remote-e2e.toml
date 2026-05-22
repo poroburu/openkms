@@ -12,8 +12,10 @@
 #
 [server]
 listen             = "0.0.0.0:8443"
-signer_token_file  = "/etc/openkms/signer.token"
 admin_token_file   = "/etc/openkms/admin.token"
+
+[pairing]
+enabled = true
 inflight_limit     = 64
 replay_window_secs = 120
 

@@ -17,6 +17,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+use tracing::warn;
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -261,6 +262,57 @@ impl AuditLog {
         w.flush().ok();
         Ok(rec)
     }
+
+    /// Append a pairing lifecycle event (separate schema from sign records).
+    pub async fn append_pair_event(
+        &self,
+        event: &str,
+        client_id: &str,
+        label: Option<&str>,
+        chain: Option<&str>,
+        pick: Option<crate::pairing::PickStrategy>,
+        pairing_id: &str,
+    ) {
+        let rec = PairAuditRecord {
+            event: event.to_string(),
+            timestamp: now_rfc3339(),
+            client_id: client_id.to_string(),
+            label: label.map(str::to_string),
+            chain: chain.map(str::to_string),
+            pick,
+            pairing_id: pairing_id.to_string(),
+        };
+        let mut line = match serde_json::to_vec(&rec) {
+            Ok(mut v) => {
+                v.push(b'\n');
+                v
+            }
+            Err(e) => {
+                warn!("pair audit serialize failed: {e}");
+                return;
+            }
+        };
+        let mut w = self.inner.writer.lock().await;
+        if w.write_all(&line).is_err() {
+            warn!("pair audit write failed");
+        } else {
+            let _ = w.flush();
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PairAuditRecord {
+    pub event: String,
+    pub timestamp: String,
+    pub client_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chain: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pick: Option<crate::pairing::PickStrategy>,
+    pub pairing_id: String,
 }
 
 fn build_record(args: BuildRecordArgs<'_>) -> AuditRecord {

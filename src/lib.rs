@@ -1,9 +1,12 @@
 //! openKMS — YubiHSM2-backed transaction signer for Cosmos and Solana.
 
+#![recursion_limit = "256"]
+
 pub mod admin;
 pub mod audit;
 pub mod chain;
 pub mod config;
+pub mod pairing;
 pub mod derive;
 pub mod hsm;
 pub mod metrics;

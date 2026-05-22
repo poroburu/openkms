@@ -597,7 +597,6 @@ mod tests {
         Config {
             server: crate::config::ServerConfig {
                 listen: "127.0.0.1:0".into(),
-                signer_token_file: "/tmp/x".into(),
                 admin_token_file: "/tmp/x".into(),
                 inflight_limit: 1,
                 replay_window_secs: 1,
@@ -613,10 +612,12 @@ mod tests {
             },
             cosmos: CosmosConfig::default(),
             state_dir: None,
+            pairing: Default::default(),
             keys: vec![ConfigKey {
                 label: "k1".into(),
                 chain,
                 object_id: 1,
+                allocatable: false,
                 derivation_path: None,
                 address_style: AddressStyle::Cosmos,
                 default_hrp: None,

@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use prometheus::{
-    Encoder, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge, Opts, Registry,
-    TextEncoder,
+    Encoder, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, Opts,
+    Registry, TextEncoder,
 };
 
 #[derive(Clone)]
@@ -26,6 +26,9 @@ struct MetricsInner {
     pub inflight: IntGauge,
     pub hsm_up: IntGauge,
     pub signer_errors_total: IntCounterVec,
+    pub pair_pending: IntGauge,
+    pub pair_active: IntGauge,
+    pub pool_allocatable: IntGaugeVec,
 }
 
 impl Metrics {
@@ -89,6 +92,27 @@ impl Metrics {
         )?;
         registry.register(Box::new(signer_errors_total.clone()))?;
 
+        let pair_pending = IntGauge::with_opts(Opts::new(
+            "openkms_pair_pending",
+            "Pending pairing requests awaiting operator approval.",
+        ))?;
+        registry.register(Box::new(pair_pending.clone()))?;
+
+        let pair_active = IntGauge::with_opts(Opts::new(
+            "openkms_pair_active",
+            "Active (non-revoked) client-to-key pairings.",
+        ))?;
+        registry.register(Box::new(pair_active.clone()))?;
+
+        let pool_allocatable = IntGaugeVec::new(
+            Opts::new(
+                "openkms_pool_allocatable",
+                "Allocatable unpaired keys per chain.",
+            ),
+            &["chain"],
+        )?;
+        registry.register(Box::new(pool_allocatable.clone()))?;
+
         Ok(Self {
             inner: Arc::new(MetricsInner {
                 registry,
@@ -99,8 +123,34 @@ impl Metrics {
                 inflight,
                 hsm_up,
                 signer_errors_total,
+                pair_pending,
+                pair_active,
+                pool_allocatable,
             }),
         })
+    }
+
+    pub fn inc_pair_pending(&self) {
+        self.inner.pair_pending.inc();
+    }
+
+    pub fn dec_pair_pending(&self) {
+        self.inner.pair_pending.dec();
+    }
+
+    pub fn inc_pair_active(&self, _label: &str) {
+        self.inner.pair_active.inc();
+    }
+
+    pub fn dec_pair_active(&self, _label: &str) {
+        self.inner.pair_active.dec();
+    }
+
+    pub fn set_pool_allocatable(&self, chain: &str, n: i64) {
+        self.inner
+            .pool_allocatable
+            .with_label_values(&[chain])
+            .set(n);
     }
 
     pub fn signs_total(&self) -> &IntCounterVec {

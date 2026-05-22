@@ -104,7 +104,6 @@ pub fn base_config(state_dir: PathBuf, audit_path: PathBuf, keys: Vec<KeyDef>) -
     Config {
         server: ServerConfig {
             listen: "127.0.0.1:0".into(),
-            signer_token_file: "/tmp/unused".into(),
             admin_token_file: "/tmp/unused".into(),
             inflight_limit: 64,
             replay_window_secs: 120,
@@ -126,6 +125,7 @@ pub fn base_config(state_dir: PathBuf, audit_path: PathBuf, keys: Vec<KeyDef>) -
             ],
         },
         state_dir: Some(state_dir),
+        pairing: Default::default(),
         keys,
     }
 }
@@ -169,6 +169,7 @@ pub fn cosmos_key_def(label: &str, object_id: u16, hrp: &str) -> KeyDef {
         label: label.into(),
         chain: Chain::Cosmos,
         object_id,
+        allocatable: false,
         derivation_path: None,
         address_style: AddressStyle::Cosmos,
         default_hrp: Some(hrp.into()),
@@ -199,6 +200,7 @@ pub fn solana_key_def(label: &str, object_id: u16) -> KeyDef {
         label: label.into(),
         chain: Chain::Solana,
         object_id,
+        allocatable: false,
         derivation_path: None,
         address_style: AddressStyle::Solana,
         default_hrp: None,
@@ -224,9 +226,16 @@ pub fn solana_key_def(label: &str, object_id: u16) -> KeyDef {
 pub async fn spawn(cfg: Config, hsm: Hsm) -> ServerHandle {
     let signer_token = "signer-token-test".to_string();
     let admin_token = "admin-token-test".to_string();
-    let state = AppState::build(cfg, hsm.clone(), signer_token.clone(), admin_token.clone())
+    let state = AppState::build(cfg.clone(), hsm.clone(), admin_token.clone())
         .await
         .expect("AppState::build");
+    for k in &cfg.keys {
+        state
+            .pairing
+            .seed_pairing("integration-test", &k.label, &signer_token)
+            .await
+            .expect("seed_pairing");
+    }
     let app = router(state);
 
     let listener = TcpListener::bind::<SocketAddr>("127.0.0.1:0".parse().unwrap())

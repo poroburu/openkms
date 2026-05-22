@@ -33,12 +33,13 @@ pub struct Config {
     pub state_dir: Option<PathBuf>,
     #[serde(default, rename = "keys")]
     pub keys: Vec<KeyDef>,
+    #[serde(default)]
+    pub pairing: PairingConfig,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ServerConfig {
     pub listen: String,
-    pub signer_token_file: PathBuf,
     pub admin_token_file: PathBuf,
     #[serde(default = "default_inflight_limit")]
     pub inflight_limit: usize,
@@ -85,12 +86,67 @@ fn default_cosmos_pubkey_type_urls() -> Vec<String> {
     ]
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PairingConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_pending_ttl")]
+    pub pending_ttl_secs: u64,
+    #[serde(default = "default_max_pending")]
+    pub max_pending: usize,
+    #[serde(default)]
+    pub reveal_addresses: bool,
+    #[serde(default)]
+    pub balance: PairingBalanceConfig,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_pending_ttl() -> u64 {
+    900
+}
+
+fn default_max_pending() -> usize {
+    32
+}
+
+impl Default for PairingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            pending_ttl_secs: default_pending_ttl(),
+            max_pending: default_max_pending(),
+            reveal_addresses: false,
+            balance: PairingBalanceConfig::default(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct PairingBalanceConfig {
+    #[serde(default)]
+    pub solana_rpc_url: Option<String>,
+    #[serde(default)]
+    pub cosmos_rest_url: Option<String>,
+    #[serde(default = "default_balance_timeout")]
+    pub query_timeout_ms: u64,
+}
+
+fn default_balance_timeout() -> u64 {
+    2000
+}
+
 /// One `[[keys]]` block.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct KeyDef {
     pub label: String,
     pub chain: Chain,
     pub object_id: u16,
+    /// When true, this key may be assigned via auto pairing (`pick` + `chain`).
+    #[serde(default)]
+    pub allocatable: bool,
     #[serde(default)]
     pub derivation_path: Option<String>,
     #[serde(default)]
@@ -291,7 +347,6 @@ impl Config {
 
     pub fn validate(&self) -> Result<()> {
         // Enforce 0600 on all secret files.
-        enforce_mode_0600(&self.server.signer_token_file)?;
         enforce_mode_0600(&self.server.admin_token_file)?;
         enforce_mode_0600(&self.hsm.password_file)?;
         if let Some(p) = self.audit.hmac_key_file.as_ref() {
@@ -417,14 +472,12 @@ mod tests {
     }
 
     fn good_config(dir: &std::path::Path) -> String {
-        let signer = write_secret(dir, "signer-token", "s3cret");
         let admin = write_secret(dir, "admin-token", "s3cret");
         let pw = write_secret(dir, "hsm-password", "s3cret");
         format!(
             r#"
 [server]
 listen = "127.0.0.1:8443"
-signer_token_file = "{}"
 admin_token_file  = "{}"
 
 [hsm]
@@ -446,7 +499,6 @@ max_signs_per_minute = 60
 [[keys.policy.allowed_programs]]
 id = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4"
 "#,
-            signer.display(),
             admin.display(),
             pw.display()
         )
@@ -518,7 +570,7 @@ max_signs_per_minute = 5
         {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(
-                dir.path().join("signer-token"),
+                dir.path().join("admin-token"),
                 std::fs::Permissions::from_mode(0o644),
             )
             .unwrap();
