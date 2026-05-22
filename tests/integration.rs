@@ -36,7 +36,6 @@ fn base_config(state_dir: &Path, audit_path: &Path, listen: &str, keys: Vec<KeyD
     Config {
         server: ServerConfig {
             listen: listen.into(),
-            signer_token_file: "/tmp/unused".into(),
             admin_token_file: "/tmp/unused".into(),
             inflight_limit: 1,
             replay_window_secs: 1,
@@ -52,6 +51,7 @@ fn base_config(state_dir: &Path, audit_path: &Path, listen: &str, keys: Vec<KeyD
         },
         cosmos: CosmosConfig::default(),
         state_dir: Some(state_dir.into()),
+        pairing: Default::default(),
         keys,
     }
 }
@@ -61,6 +61,7 @@ fn solana_key(label: &str, object_id: u16) -> KeyDef {
         label: label.into(),
         chain: openkms::chain::Chain::Solana,
         object_id,
+        allocatable: false,
         derivation_path: None,
         address_style: AddressStyle::Solana,
         default_hrp: None,
@@ -113,9 +114,16 @@ async fn spawn_server(
     signer_token: &str,
     admin_token: &str,
 ) -> (String, JoinHandle<()>) {
-    let state = AppState::build(cfg, hsm, signer_token.into(), admin_token.into())
+    let state = AppState::build(cfg.clone(), hsm, admin_token.into())
         .await
         .expect("build app state");
+    for k in &cfg.keys {
+        state
+            .pairing
+            .seed_pairing("integration-test", &k.label, signer_token)
+            .await
+            .expect("seed_pairing");
+    }
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let addr = listener.local_addr().expect("local addr");
     let app = router(state);
@@ -181,7 +189,7 @@ async fn serves_health_and_keys_over_real_http() {
         .expect("health body 2");
     assert_eq!(health2["hsm_up"], true);
 
-    let keys: serde_json::Value = client
+    let pool: serde_json::Value = client
         .get(format!("{base_url}/keys"))
         .send()
         .await
@@ -191,10 +199,9 @@ async fn serves_health_and_keys_over_real_http() {
         .json()
         .await
         .expect("keys body");
-    assert!(keys.is_array(), "expected /keys array, got {keys}");
     assert!(
-        keys.as_array().unwrap().is_empty(),
-        "expected no keys, got {keys}"
+        pool.get("chains").and_then(|c| c.as_object()).is_some(),
+        "expected pool summary, got {pool}"
     );
 
     server_handle.abort();
@@ -313,7 +320,7 @@ async fn signs_and_honors_admin_disable_over_real_http() {
     );
     assert_eq!(policy_after["runtime"]["daily_spend"][0]["spent"], "1000");
 
-    let keys: serde_json::Value = client
+    let pool: serde_json::Value = client
         .get(format!("{base_url}/keys"))
         .send()
         .await
@@ -323,9 +330,8 @@ async fn signs_and_honors_admin_disable_over_real_http() {
         .json()
         .await
         .expect("keys body");
-    assert_eq!(keys.as_array().unwrap().len(), 1);
-    assert_eq!(keys[0]["label"], SOLANA_LABEL);
-    assert_eq!(keys[0]["enabled"], true);
+    assert_eq!(pool["chains"]["solana"]["configured"], 1);
+    assert_eq!(pool["chains"]["solana"]["paired"], 1);
 
     let disable_resp: serde_json::Value = client
         .post(format!("{base_url}/admin/keys/{SOLANA_LABEL}/disable"))
@@ -472,6 +478,194 @@ async fn hardware_ping_real_hsm() {
     assert!(hsm.ping().await, "hardware HSM should ping");
     let r = hsm.get_pseudo_random(16).await.expect("random");
     assert_eq!(r.len(), 16);
+}
+
+#[tokio::test]
+async fn policy_poll_pending_then_delivers_bearer() {
+    let dir = TempDir::new().expect("tempdir");
+    let audit_path = dir.path().join("audit.jsonl");
+    let listen = "127.0.0.1:0";
+    let mut key = solana_key(SOLANA_LABEL, SOLANA_OBJECT_ID);
+    key.allocatable = true;
+    let cfg = base_config(dir.path(), &audit_path, listen, vec![key]);
+    let hsm = Hsm::open_mock(1, b"password").expect("mock hsm");
+    provision_mock_solana_key(&hsm, SOLANA_LABEL, SOLANA_OBJECT_ID).await;
+
+    let state = AppState::build(cfg.clone(), hsm, ADMIN_TOKEN.into())
+        .await
+        .expect("build app state");
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let addr = listener.local_addr().expect("local addr");
+    let app = router(state);
+    let handle = tokio::spawn(async move {
+        axum::serve(listener, app).await.expect("serve");
+    });
+    let base_url = format!("http://{addr}");
+    wait_until_ready(&base_url).await;
+
+    let client = Client::new();
+    let pair_resp: serde_json::Value = client
+        .post(format!("{base_url}/pair/request"))
+        .json(&serde_json::json!({
+            "client_id": "pay-laptop",
+            "label": SOLANA_LABEL,
+        }))
+        .send()
+        .await
+        .expect("pair request")
+        .error_for_status()
+        .expect("pair status")
+        .json()
+        .await
+        .expect("pair json");
+    let request_id = pair_resp["request_id"]
+        .as_str()
+        .expect("request_id")
+        .to_string();
+
+    let pending: serde_json::Value = client
+        .get(format!(
+            "{base_url}/policy/{SOLANA_LABEL}?request_id={request_id}"
+        ))
+        .send()
+        .await
+        .expect("poll pending")
+        .error_for_status()
+        .expect("poll pending status")
+        .json()
+        .await
+        .expect("poll pending json");
+    assert_eq!(pending["status"], "pending");
+
+    let approve: serde_json::Value = client
+        .post(format!("{base_url}/admin/pair/{request_id}/approve"))
+        .header("Authorization", format!("Bearer {ADMIN_TOKEN}"))
+        .send()
+        .await
+        .expect("approve")
+        .error_for_status()
+        .expect("approve status")
+        .json()
+        .await
+        .expect("approve json");
+    let token = approve["token"].as_str().expect("approve token");
+
+    let approved: serde_json::Value = client
+        .get(format!(
+            "{base_url}/policy/{SOLANA_LABEL}?request_id={request_id}"
+        ))
+        .send()
+        .await
+        .expect("poll approved")
+        .error_for_status()
+        .expect("poll approved status")
+        .json()
+        .await
+        .expect("poll approved json");
+    assert_eq!(approved["status"], "approved");
+    assert_eq!(approved["token"], token);
+    assert_eq!(approved["policy"]["label"], SOLANA_LABEL);
+
+    let gone = client
+        .get(format!(
+            "{base_url}/policy/{SOLANA_LABEL}?request_id={request_id}"
+        ))
+        .send()
+        .await
+        .expect("poll again")
+        .status();
+    assert_eq!(gone.as_u16(), 404);
+
+    let policy: serde_json::Value = client
+        .get(format!("{base_url}/policy/{SOLANA_LABEL}"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .expect("policy bearer")
+        .error_for_status()
+        .expect("policy bearer status")
+        .json()
+        .await
+        .expect("policy bearer json");
+    assert_eq!(policy["label"], SOLANA_LABEL);
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn client_generated_bearer_pairing() {
+    let dir = TempDir::new().expect("tempdir");
+    let audit_path = dir.path().join("audit.jsonl");
+    let listen = "127.0.0.1:0";
+    let mut key = solana_key(SOLANA_LABEL, SOLANA_OBJECT_ID);
+    key.allocatable = true;
+    let cfg = base_config(dir.path(), &audit_path, listen, vec![key]);
+    let hsm = Hsm::open_mock(1, b"password").expect("mock hsm");
+    provision_mock_solana_key(&hsm, SOLANA_LABEL, SOLANA_OBJECT_ID).await;
+
+    let client_bearer = openkms::pairing::PairingStore::generate_token();
+
+    let state = AppState::build(cfg.clone(), hsm, ADMIN_TOKEN.into())
+        .await
+        .expect("build app state");
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let addr = listener.local_addr().expect("local addr");
+    let app = router(state);
+    let handle = tokio::spawn(async move {
+        axum::serve(listener, app).await.expect("serve");
+    });
+    let base_url = format!("http://{addr}");
+    wait_until_ready(&base_url).await;
+
+    let client = Client::new();
+    let pair_resp: serde_json::Value = client
+        .post(format!("{base_url}/pair/request"))
+        .json(&serde_json::json!({
+            "client_id": "pay-laptop",
+            "label": SOLANA_LABEL,
+            "bearer": client_bearer,
+        }))
+        .send()
+        .await
+        .expect("pair request")
+        .error_for_status()
+        .expect("pair status")
+        .json()
+        .await
+        .expect("pair json");
+    let request_id = pair_resp["request_id"]
+        .as_str()
+        .expect("request_id")
+        .to_string();
+
+    let approve: serde_json::Value = client
+        .post(format!("{base_url}/admin/pair/{request_id}/approve"))
+        .header("Authorization", format!("Bearer {ADMIN_TOKEN}"))
+        .send()
+        .await
+        .expect("approve")
+        .error_for_status()
+        .expect("approve status")
+        .json()
+        .await
+        .expect("approve json");
+    assert_eq!(approve["bearer_source"], "client");
+    assert!(approve.get("token").is_none() || approve["token"].is_null());
+
+    let policy: serde_json::Value = client
+        .get(format!("{base_url}/policy/{SOLANA_LABEL}"))
+        .header("Authorization", format!("Bearer {client_bearer}"))
+        .send()
+        .await
+        .expect("policy bearer")
+        .error_for_status()
+        .expect("policy bearer status")
+        .json()
+        .await
+        .expect("policy bearer json");
+    assert_eq!(policy["label"], SOLANA_LABEL);
+
+    handle.abort();
 }
 
 // Silence `unused` warnings for KeyDef/KeyPolicy which this module keeps
