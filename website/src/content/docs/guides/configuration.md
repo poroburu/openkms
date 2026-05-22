@@ -22,7 +22,6 @@ Evaluation order for the policy fields is in
 | Field | Required | Default | Description |
 | --- | --- | --- | --- |
 | `listen` | yes | — | Bind address. `127.0.0.1:9443` for loopback / reverse proxy; `0.0.0.0:PORT` only on a hardened staging host. |
-| `signer_token_file` | yes | — | Bearer token for `/sign/*` and `/policy/*`. Must be `0600`. |
 | `admin_token_file` | yes | — | Bearer token for `/admin/*`. Must be `0600`. |
 | `inflight_limit` | no | `64` | Max concurrent in-flight signing requests. Excess returns `503` from the buffer/limit layer. |
 | `replay_window_secs` | no | `120` | Replay-cache lifetime for deterministic signatures. |
@@ -42,11 +41,33 @@ Evaluation order for the policy fields is in
 | `path` | yes | — | Append-only JSONL audit log (typically under `state_dir`). |
 | `hmac_key_file` | no | — | When set, every audit record includes an HMAC of the prior chain. The key file must be `0600`. |
 
+## `[pairing]`
+
+| Field | Required | Default | Description |
+| --- | --- | --- | --- |
+| `enabled` | no | `true` | When false, `POST /pair/request` is rejected. |
+| `pending_ttl_secs` | no | `900` | Pending request expiry. |
+| `max_pending` | no | `32` | Max concurrent pending requests. |
+| `reveal_addresses` | no | `false` | When true, `GET /pair/pool` may include allocatable key addresses. |
+
+Clients may include an optional `bearer` field on `POST /pair/request` (`okms_` + 64 hex). openKMS stores only a hash until the operator approves; omit `bearer` for server-mint on approve.
+
+### `[pairing.balance]`
+
+Required for auto `pick: most` or `pick: least`.
+
+| Field | Description |
+| --- | --- |
+| `solana_rpc_url` | Solana JSON-RPC for `getBalance` / SPL balances. |
+| `cosmos_rest_url` | Cosmos REST base for bank balances. |
+| `query_timeout_ms` | RPC timeout (default `2000`). |
+
 ## `state_dir`
 
 Top-level path used for runtime persistence: admin policy overlays,
-kill-switch flags, and the audit log when `[audit].path` is relative. Set this
-on a writable, dedicated directory (e.g. `/var/lib/openkms`).
+pairing state (`pairing.json`), kill-switch flags, and the audit log when
+`[audit].path` is relative. Set this on a writable, dedicated directory (e.g.
+`/var/lib/openkms`).
 
 ## `[cosmos]`
 
@@ -66,6 +87,7 @@ One block per signing key.
 | `derivation_path` | no | — | BIP-32 / SLIP-10 path used when `keys provision` imports a deterministic key (Cosmos: `m/44'/118'/0'/0/0`; Solana: `m/44'/501'/0'/0'`). |
 | `address_style` | no | `cosmos` | `cosmos`, `evm`, or `solana`. Drives address derivation and recipient comparisons. |
 | `default_hrp` | no | — | Bech32 prefix for Cosmos-style derivations (e.g. `cosmos`, `osmo`). |
+| `allocatable` | no | `false` | When true, key may be assigned via auto pairing (`pick` + `chain`). |
 | `policy` | yes | — | `[keys.policy]` block (see below). |
 
 ### Solana `[[keys]]` example

@@ -11,6 +11,16 @@
         },
         "description": "Request payload could not be decoded or validated."
       },
+      "Conflict": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "description": "Pool exhausted or label already paired."
+      },
       "Forbidden": {
         "content": {
           "application/json": {
@@ -51,6 +61,16 @@
         },
         "description": "Rate-limit policy denied the request."
       },
+      "ServiceUnavailable": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "description": "Balance RPC unavailable for most/least pick."
+      },
       "Unauthorized": {
         "content": {
           "application/json": {
@@ -63,6 +83,35 @@
       }
     },
     "schemas": {
+      "ActivePairing": {
+        "properties": {
+          "client_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "paired_at": {
+            "type": "integer"
+          },
+          "revoked_at": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "client_id",
+          "label",
+          "paired_at"
+        ],
+        "type": "object"
+      },
       "AdminKeyResponse": {
         "properties": {
           "enabled": {
@@ -154,6 +203,33 @@
         "required": [
           "program",
           "addresses"
+        ],
+        "type": "object"
+      },
+      "ChainPoolStats": {
+        "properties": {
+          "allocatable": {
+            "type": "integer"
+          },
+          "can_allocate": {
+            "type": "boolean"
+          },
+          "configured": {
+            "type": "integer"
+          },
+          "paired": {
+            "type": "integer"
+          },
+          "reserved": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "configured",
+          "allocatable",
+          "paired",
+          "reserved",
+          "can_allocate"
         ],
         "type": "object"
       },
@@ -399,6 +475,190 @@
         ],
         "type": "object"
       },
+      "PairApproveRequest": {
+        "properties": {
+          "label": {
+            "description": "Override label for auto requests.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PairApproveResponse": {
+        "properties": {
+          "bearer_source": {
+            "enum": [
+              "server",
+              "client"
+            ],
+            "type": "string"
+          },
+          "client_id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "pairing_id": {
+            "type": "string"
+          },
+          "pick": {
+            "enum": [
+              "most",
+              "least",
+              "random"
+            ],
+            "type": "string"
+          },
+          "token": {
+            "description": "Present only when bearer_source is server (minted on approve).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pairing_id",
+          "client_id",
+          "label",
+          "bearer_source"
+        ],
+        "type": "object"
+      },
+      "PairAsset": {
+        "properties": {
+          "denom": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "native",
+              "spl",
+              "denom"
+            ],
+            "type": "string"
+          },
+          "mint": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "PairRequest": {
+        "properties": {
+          "asset": {
+            "$ref": "#/components/schemas/PairAsset"
+          },
+          "bearer": {
+            "description": "Optional client-generated bearer (okms_ + 64 hex). Hashed at ingest; omit for server-mint on approve.",
+            "type": "string"
+          },
+          "chain": {
+            "type": "string"
+          },
+          "client_id": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "pick": {
+            "enum": [
+              "most",
+              "least",
+              "random"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_id"
+        ],
+        "type": "object"
+      },
+      "PairRequestResponse": {
+        "properties": {
+          "expires_at": {
+            "type": "integer"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "status",
+          "expires_at"
+        ],
+        "type": "object"
+      },
+      "PendingPairRequest": {
+        "properties": {
+          "asset": {
+            "$ref": "#/components/schemas/PairAsset"
+          },
+          "chain": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "client_id": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expires_at": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pick": {
+            "enum": [
+              "most",
+              "least",
+              "random"
+            ],
+            "type": "string"
+          },
+          "request_kind": {
+            "enum": [
+              "labeled",
+              "auto"
+            ],
+            "type": "string"
+          },
+          "requested_at": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "client_id",
+          "request_kind",
+          "requested_at",
+          "expires_at"
+        ],
+        "type": "object"
+      },
       "PolicyRuntime": {
         "properties": {
           "daily_spend": {
@@ -490,6 +750,48 @@
           "effective_enabled",
           "policy",
           "runtime"
+        ],
+        "type": "object"
+      },
+      "PoolKeyEntry": {
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "allocatable": {
+            "type": "boolean"
+          },
+          "chain": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "chain",
+          "allocatable"
+        ],
+        "type": "object"
+      },
+      "PoolSummary": {
+        "properties": {
+          "chains": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ChainPoolStats"
+            },
+            "type": "object"
+          },
+          "keys": {
+            "items": {
+              "$ref": "#/components/schemas/PoolKeyEntry"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "chains"
         ],
         "type": "object"
       },
@@ -596,7 +898,7 @@
         "type": "http"
       },
       "signerBearer": {
-        "description": "Bearer token loaded from signer_token_file.",
+        "description": "Per-client pairing token issued on admin approve (scoped to one key label).",
         "scheme": "bearer",
         "type": "http"
       }
@@ -851,6 +1153,237 @@
         ]
       }
     },
+    "/admin/pair": {
+      "get": {
+        "operationId": "adminListPair",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ActivePairing"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Active pairings (no secrets)."
+          }
+        },
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ],
+        "summary": "List active pairings",
+        "tags": [
+          "admin",
+          "pairing"
+        ]
+      }
+    },
+    "/admin/pair/pending": {
+      "get": {
+        "operationId": "adminListPendingPair",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PendingPairRequest"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Pending requests."
+          }
+        },
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ],
+        "summary": "List pending pairing requests",
+        "tags": [
+          "admin",
+          "pairing"
+        ]
+      }
+    },
+    "/admin/pair/pool": {
+      "get": {
+        "operationId": "adminPairPool",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PoolSummary"
+                }
+              }
+            },
+            "description": "Pool summary with per-key allocatable state and addresses."
+          }
+        },
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ],
+        "summary": "Full key pool with addresses",
+        "tags": [
+          "admin",
+          "pairing"
+        ]
+      }
+    },
+    "/admin/pair/{id}": {
+      "delete": {
+        "operationId": "adminRevokePair",
+        "parameters": [
+          {
+            "description": "Pending request id or active pairing id.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminKeyResponse"
+                }
+              }
+            },
+            "description": "Key enabled state was updated."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ],
+        "summary": "Revoke an active pairing",
+        "tags": [
+          "admin",
+          "pairing"
+        ]
+      }
+    },
+    "/admin/pair/{id}/approve": {
+      "post": {
+        "operationId": "adminApprovePair",
+        "parameters": [
+          {
+            "description": "Pending request id or active pairing id.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PairApproveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PairApproveResponse"
+                }
+              }
+            },
+            "description": "Pairing approved; bearer token returned once."
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ],
+        "summary": "Approve a pairing request",
+        "tags": [
+          "admin",
+          "pairing"
+        ]
+      }
+    },
+    "/admin/pair/{id}/reject": {
+      "post": {
+        "operationId": "adminRejectPair",
+        "parameters": [
+          {
+            "description": "Pending request id or active pairing id.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminKeyResponse"
+                }
+              }
+            },
+            "description": "Key enabled state was updated."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ],
+        "summary": "Reject a pending pairing request",
+        "tags": [
+          "admin",
+          "pairing"
+        ]
+      }
+    },
     "/admin/policy": {
       "get": {
         "operationId": "adminListPolicy",
@@ -915,17 +1448,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/KeySummary"
-                  },
-                  "type": "array"
+                  "$ref": "#/components/schemas/PoolSummary"
                 }
               }
             },
-            "description": "Configured keys with derived addresses and enabled state."
+            "description": "Per-chain pool counts without addresses by default."
           }
         },
-        "summary": "List configured signing keys",
+        "summary": "Key pool capacity summary (alias of /pair/pool)",
         "tags": [
           "keys"
         ]
@@ -955,6 +1485,61 @@
         "summary": "Expose Prometheus metrics",
         "tags": [
           "metrics"
+        ]
+      }
+    },
+    "/pair/pool": {
+      "get": {
+        "operationId": "pairPool",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PoolSummary"
+                }
+              }
+            },
+            "description": "Pool summary; optional key list when reveal_addresses is enabled."
+          }
+        },
+        "summary": "Key pool capacity for pairing",
+        "tags": [
+          "pairing"
+        ]
+      }
+    },
+    "/pair/request": {
+      "post": {
+        "operationId": "pairRequest",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PairRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PairRequestResponse"
+                }
+              }
+            },
+            "description": "Pending request created."
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "summary": "Request client-to-key pairing",
+        "tags": [
+          "pairing"
         ]
       }
     },
@@ -1160,6 +1745,9 @@
     },
     {
       "name": "keys"
+    },
+    {
+      "name": "pairing"
     },
     {
       "name": "signing"

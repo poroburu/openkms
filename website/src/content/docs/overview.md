@@ -28,7 +28,7 @@ Strategy --> Auth --> Decode --> Policy --> Replay --> YubiHSM2
                                                        Signature
 ```
 
-1. **Auth** — bearer token in `signer_token_file`; admin token is separate.
+1. **Auth** — per-client pairing bearer (issued on operator approve); admin token is separate.
 2. **Decode** — chain-specific (Solana `VersionedMessage`, Cosmos `SignDoc`).
 3. **Policy** — rate limits, per-tx and rolling daily caps, program / message
    / recipient allowlists, kill switch.

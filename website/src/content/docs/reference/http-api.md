@@ -5,132 +5,88 @@ description: Public HTTP routes and the generated OpenAPI source of truth.
 
 **Docs path:** Reference / HTTP API
 
-All JSON endpoints use bearer-token authentication where noted. Signing routes
-use the token in `signer_token_file`; admin routes use `admin_token_file`.
+JSON signing routes use a **per-client pairing bearer** scoped to one key label. Admin routes use `admin_token_file`.
 
 The machine-readable API source of truth is the committed
 [`openapi/openkms.v1.json`](https://github.com/poroburu/openkms/blob/main/openapi/openkms.v1.json)
 spec. CI regenerates it from Rust code and fails when it drifts.
-
-Direct artifact links:
-
-- [OpenAPI JSON](https://github.com/poroburu/openkms/blob/main/openapi/openkms.v1.json)
-- [OpenAPI generator](https://github.com/poroburu/openkms/blob/main/src/openapi.rs)
 
 ## Routes
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | `GET` | `/health` | none | Health check and HSM probe state. |
-| `GET` | `/keys` | none | List configured keys and runtime enabled state. |
-| `GET` | `/policy` | signer bearer | List effective signing policies and live usage counters. |
-| `GET` | `/policy/{label}` | signer bearer | Read one key's effective policy before signing. |
-| `POST` | `/sign/solana` | signer bearer | Sign a Solana `VersionedMessage`. |
-| `POST` | `/sign/cosmos` | signer bearer | Sign a Cosmos SDK `SignDoc`. |
-| `GET` | `/admin/policy` | admin bearer | List policies with baseline and overlay metadata. |
-| `GET` | `/admin/keys/{label}/policy` | admin bearer | Read one key policy with admin metadata. |
-| `PATCH` | `/admin/keys/{label}/policy` | admin bearer | Persist a partial per-key policy overlay. |
-| `DELETE` | `/admin/keys/{label}/policy` | admin bearer | Clear a policy overlay and return to config baseline. |
-| `POST` | `/admin/keys/{label}/enable` | admin bearer | Enable a configured key. |
-| `POST` | `/admin/keys/{label}/disable` | admin bearer | Disable a configured key. |
+| `GET` | `/keys` | none | Key pool capacity summary (same as `/pair/pool`). |
+| `GET` | `/pair/pool` | none | Pool counts per chain (no addresses by default). |
+| `POST` | `/pair/request` | none | Request labeled or auto pairing. |
+| `GET` | `/policy` | pairing bearer | Policy for the paired label only. |
+| `GET` | `/policy/{label}` | pairing bearer **or** `?request_id=` | Read policy (label must match token). While a pairing request is pending, poll with `?request_id=<id>` (no bearer): `{"status":"pending",…}`. After operator approve, the next poll returns `{"status":"approved","token":"okms_…","policy":{…}}` once; then use the bearer on later calls. |
+| `POST` | `/sign/solana` | pairing bearer | Sign a Solana `VersionedMessage`. |
+| `POST` | `/sign/cosmos` | pairing bearer | Sign a Cosmos SDK `SignDoc`. |
+| `GET` | `/admin/pair/pending` | admin | Pending pairing requests. |
+| `GET` | `/admin/pair` | admin | Active pairings. |
+| `GET` | `/admin/pair/pool` | admin | Full pool with addresses. |
+| `POST` | `/admin/pair/{id}/approve` | admin | Approve; returns bearer token once. |
+| `POST` | `/admin/pair/{id}/reject` | admin | Reject pending request. |
+| `DELETE` | `/admin/pair/{id}` | admin | Revoke pairing (frees allocatable slot). |
+| `GET` | `/admin/policy` | admin | List policies with baseline and overlay metadata. |
+| `GET` | `/admin/keys/{label}/policy` | admin | Read one key policy with admin metadata. |
+| `PATCH` | `/admin/keys/{label}/policy` | admin | Persist a partial per-key policy overlay. |
+| `DELETE` | `/admin/keys/{label}/policy` | admin | Clear a policy overlay. |
+| `POST` | `/admin/keys/{label}/enable` | admin | Enable a configured key. |
+| `POST` | `/admin/keys/{label}/disable` | admin | Disable a configured key. |
 | `GET` | `/metrics` | none | Prometheus text exposition. |
 
-## Policy Inspection
+## Pairing
 
-Signer agents should read policy before requesting signatures:
+**Labeled request** (client knows the key):
+
+```json
+{ "client_id": "pay-laptop", "label": "solana-hot-0" }
+```
+
+**Labeled request with client-generated bearer** (recommended for laptop clients):
+
+```json
+{
+  "client_id": "pay-laptop",
+  "label": "solana-hot-0",
+  "bearer": "okms_<64 hex chars>"
+}
+```
+
+Generate on the client (`okms_$(openssl rand -hex 32)`), save to a mode-`0600` file, then include the same string in `bearer`. openKMS stores only a SHA-256 hash until the operator approves. Use TLS on untrusted networks — the bearer crosses the wire in the request body.
+
+If `bearer` is omitted, the server mints a token on approve (legacy path).
+
+**Auto request** (assign an unused allocatable key):
+
+```json
+{
+  "client_id": "pay-laptop",
+  "chain": "solana",
+  "pick": "least",
+  "asset": { "kind": "native" }
+}
+```
+
+`pick` is `most`, `least`, or `random`. `most`/`least` require `[pairing.balance]` RPC URLs in config.
+
+Operator approval:
+
+```bash
+openkms pair list
+openkms pair approve <request_id>
+```
+
+The approve response includes `bearer_source` (`server` or `client`). When `server`, a `token` field is present (shown once). When `client`, the bearer was submitted on `POST /pair/request` and is not repeated — use the value already saved on the device. Server-mint pairings may also deliver the token once via `GET /policy/{label}?request_id=…` poll after approval. Store bearer files at mode `0600` and pass `Authorization: Bearer …` on `/policy` and `/sign/*`.
+
+## Policy inspection
 
 ```bash
 curl -sS \
-  -H "Authorization: Bearer $(cat signer.token)" \
+  -H "Authorization: Bearer $(cat openkms.token)" \
   http://pi.local:9443/policy/solana-hot-0
 ```
 
-Responses include key identity, the effective policy, and runtime counters:
-
-```json
-{
-  "label": "solana-hot-0",
-  "chain": "solana",
-  "effective_enabled": true,
-  "policy": {
-    "enabled": true,
-    "max_signs_per_minute": 30,
-    "max_signs_per_day": 5000,
-    "per_tx_cap_lamports": "5000000000",
-    "allowed_programs": [{ "id": "11111111111111111111111111111111" }]
-  },
-  "runtime": {
-    "enabled_override": null,
-    "daily_spend": [{ "token": "native", "spent": "0", "cap": null }],
-    "sign_counts": {
-      "per_minute": { "limit": 30, "used": 0, "window_secs": 60 }
-    }
-  }
-}
-```
-
-The runtime sign counters are accepted policy evaluations inside each window.
-They help agents self-throttle, but the policy engine remains authoritative.
-
-## Admin Policy Overlays
-
-Admin policy mutation stores a partial overlay under `state_dir`; it does not
-rewrite `config.toml`. The effective policy is the config baseline plus the
-persisted overlay. Non-null fields in a `PATCH` replace the corresponding
-baseline policy field. Use `DELETE /admin/keys/{label}/policy` to clear the
-whole overlay.
-
-```bash
-curl -sS -X PATCH \
-  -H "Authorization: Bearer $(cat admin.token)" \
-  -H "Content-Type: application/json" \
-  http://pi.local:9443/admin/keys/solana-hot-0/policy \
-  -d '{ "max_signs_per_minute": 5, "per_tx_cap_lamports": "1000000" }'
-```
-
-## Solana Signing
-
-```json
-{
-  "label": "solana-hot-0",
-  "expected_chain_id": "mainnet-beta",
-  "message_b64": "<base64 VersionedMessage>",
-  "address_lookup_tables": [
-    { "key": "<ALT pubkey>", "addresses": ["<base58>", "..."] }
-  ]
-}
-```
-
-Response:
-
-```json
-{ "signature_b64": "<base64 64-byte ed25519>" }
-```
-
-## Cosmos Signing
-
-```json
-{
-  "label": "cosmos-hub-0",
-  "sign_doc_b64": "<base64 proto-encoded SignDoc>",
-  "expected_chain_id": "cosmoshub-4"
-}
-```
-
-Response:
-
-```json
-{ "signature_b64": "<base64 64-byte compact low-s ECDSA>" }
-```
-
-## Error Shape
-
-JSON API errors use this shape:
-
-```json
-{ "error": "human-readable reason" }
-```
-
-Policy denials return `403` or `429` depending on the denial reason. Decode
-errors return `400`, unknown labels return `404`, and HSM/internal failures
-return `500`.
+See the OpenAPI spec for request/response schemas and admin policy overlay details.
