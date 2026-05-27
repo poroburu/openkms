@@ -1,0 +1,4 @@
+# Only upload what the Astro site needs; skip Rust artifacts and repo root cruft.
+/*
+!website
+!brand

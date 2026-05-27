@@ -2,9 +2,13 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import tailwindcss from '@tailwindcss/vite';
 
+const isVercel = !!process.env.VERCEL;
+
 export default defineConfig({
-  site: 'https://poroburu.github.io',
-  base: '/openkms',
+  site: isVercel
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL}`
+    : 'https://poroburu.github.io',
+  base: isVercel ? '/' : '/openkms',
   vite: {
     plugins: [tailwindcss()],
   },
