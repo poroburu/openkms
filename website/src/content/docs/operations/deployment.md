@@ -26,7 +26,9 @@ unit enables hardening controls including:
 - `SystemCallFilter=@system-service`
 
 The YubiHSM connector runs separately and owns USB access. openKMS talks to the
-connector over HTTP, normally on loopback.
+connector over HTTP, normally on loopback. Prerequisite package install and
+connector setup are documented on the
+[YubiHSM vault page](/openkms/vaults/yubihsm/).
 
 ## Remote E2E
 

@@ -1,6 +1,6 @@
 ---
 title: Configuration
-description: Every block in config.toml — server, HSM, audit, state, Cosmos defaults, and per-key policy.
+description: Every block in config.toml — server, vaults, audit, state, Cosmos defaults, and per-key policy.
 ---
 
 **Docs path:** Operate / Configuration
@@ -12,8 +12,8 @@ The drift test in
 [`tests/docs_drift.rs`](https://github.com/poroburu/openkms/blob/main/tests/docs_drift.rs)
 parses and `.validate()`-checks that file, so documented field names stay live.
 
-The loader rejects duplicate key labels, duplicate `object_id` values, missing
-policy blocks, and invalid allowlist strings before the service starts.
+The loader rejects duplicate key labels, duplicate `(vault, key_id)` pairs,
+missing policy blocks, and invalid allowlist strings before the service starts.
 Evaluation order for the policy fields is in
 [Policy Authoring](/openkms/guides/policy-authoring/).
 
@@ -27,13 +27,28 @@ Evaluation order for the policy fields is in
 | `inflight_limit` | no | `64` | Max concurrent in-flight signing requests. Excess returns `503` from the buffer/limit layer. |
 | `replay_window_secs` | no | `120` | Replay-cache lifetime for deterministic signatures. |
 
-## `[hsm]`
+## `[vaults.*]`
 
-| Field | Required | Default | Description |
-| --- | --- | --- | --- |
-| `connector_url` | yes | — | `yubihsm-connector` HTTP endpoint, normally on loopback. |
-| `auth_key_id` | yes | — | YubiHSM auth-key slot the runtime authenticates as. `3` is the signer slot from `openkms setup`. |
-| `password_file` | yes | — | 64 hex digits (32 bytes) for the signer auth-key password. Generate with `openkms ceremony print-signer-password`. Must be `0600`. |
+One block per signing backend. Each block must include `driver`; other fields
+depend on the driver. See the [Vaults](/openkms/vaults/overview/) section for
+per-driver reference.
+
+| Field | Required | Description |
+| --- | --- | --- |
+| `driver` | yes | Backend identifier: `yubihsm`, `file`, `awskms`, `azure`, `cloudkms`, `hashicorpvault`, `nitro`, or `confidentialspace`. |
+
+Production deployments use `driver = "yubihsm"`. Example:
+
+```toml
+[vaults.hsm]
+driver        = "yubihsm"
+connector_url = "http://127.0.0.1:12345"
+auth_key_id   = 3
+password_file = "/etc/openkms/hsm-password"
+```
+
+Full YubiHSM field reference and prerequisite setup:
+[YubiHSM vault](/openkms/vaults/yubihsm/).
 
 ## `[audit]`
 
@@ -62,7 +77,8 @@ One block per signing key.
 | --- | --- | --- | --- |
 | `label` | yes | — | Stable identifier used in HTTP requests and the audit log. |
 | `chain` | yes | — | `solana` or `cosmos`. |
-| `object_id` | yes | — | YubiHSM asymmetric-key object id (decimal or `0x0100`). |
+| `vault` | yes | — | Logical vault name matching a `[vaults.*]` block. |
+| `key_id` | yes | — | Driver-specific key identifier (YubiHSM object id or file vault label). |
 | `derivation_path` | no | — | BIP-32 / SLIP-10 path used when `keys provision` imports a deterministic key (Cosmos: `m/44'/118'/0'/0/0`; Solana: `m/44'/501'/0'/0'`). |
 | `address_style` | no | `cosmos` | `cosmos`, `evm`, or `solana`. Drives address derivation and recipient comparisons. |
 | `default_hrp` | no | — | Bech32 prefix for Cosmos-style derivations (e.g. `cosmos`, `osmo`). |
@@ -72,9 +88,10 @@ One block per signing key.
 
 ```toml
 [[keys]]
-label     = "solana-hot-0"
-chain     = "solana"
-object_id = 0x0101
+label  = "solana-hot-0"
+chain  = "solana"
+vault  = "hsm"
+key_id = "0x0101"
 
 [keys.policy]
 enabled              = true
@@ -93,7 +110,8 @@ per_tx_cap_lamports  = "5000000000"
 [[keys]]
 label            = "cosmos-hub-0"
 chain            = "cosmos"
-object_id        = 0x0100
+vault            = "hsm"
+key_id           = "0x0100"
 derivation_path  = "m/44'/118'/0'/0/0"
 address_style    = "cosmos"
 default_hrp      = "cosmos"

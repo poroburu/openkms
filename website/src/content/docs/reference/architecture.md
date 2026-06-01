@@ -1,6 +1,6 @@
 ---
 title: Architecture
-description: How the signer, policy engine, HSM wrapper, audit log, metrics, and replay cache fit together.
+description: How the signer, policy engine, vault layer, audit log, metrics, and replay cache fit together.
 ---
 
 **Docs path:** Reference / Architecture
@@ -16,7 +16,11 @@ src/
 ├── cli_ceremony.rs  `openkms ceremony print-*-password / print-derived-signing-secrets`
 ├── cli_backup.rs    `openkms backup` and `openkms restore`
 ├── config.rs        TOML loader, permission checks, validation
-├── hsm.rs           YubiHSM client wrapper and mock HSM support
+├── vault/
+│   ├── mod.rs       SigningVault trait, driver registry, KeyId
+│   ├── yubihsm.rs   YubiHSM2 driver and mockhsm support
+│   ├── file.rs      File-based dev/CI vault
+│   └── *.rs         Cloud / TEE driver stubs (awskms, azure, …)
 ├── derive.rs        BIP-39, BIP-32, SLIP-10, and HKDF ceremony
 ├── sig.rs           ECDSA DER/compact conversion and low-s normalization
 ├── chain/
@@ -47,10 +51,13 @@ HTTP request
   -> chain-specific decode
   -> policy evaluation
   -> replay cache check
-  -> HSM signing
+  -> vault signing (via configured driver)
   -> audit record
   -> metrics update
 ```
+
+Each `[[keys]]` entry names a vault; `ChainSigner::sign` resolves the vault
+handle and driver-specific `key_id` at runtime.
 
 ## Adding A Chain
 
@@ -60,4 +67,5 @@ HTTP request
 4. Add any chain-specific config in `config.rs`.
 5. Extend policy checks only when generic `Intent` semantics are not enough.
 
-The HSM, policy, audit, admin, metrics, and replay layers are chain-agnostic.
+The vault layer, policy, audit, admin, metrics, and replay layers are
+chain-agnostic.

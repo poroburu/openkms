@@ -37,6 +37,18 @@ GitHub Pages workflow. Start there for long-form guides:
 - [HTTP API](website/src/content/docs/reference/http-api.md)
 - [Architecture](website/src/content/docs/reference/architecture.md)
 
+Vault drivers:
+
+- [Vaults overview](website/src/content/docs/vaults/overview.md)
+- [YubiHSM](website/src/content/docs/vaults/yubihsm.md)
+- [File (dev)](website/src/content/docs/vaults/file.md)
+- [AWS KMS](website/src/content/docs/vaults/awskms.md)
+- [Azure Key Vault](website/src/content/docs/vaults/azure.md)
+- [Google Cloud KMS](website/src/content/docs/vaults/cloudkms.md)
+- [HashiCorp Vault](website/src/content/docs/vaults/hashicorpvault.md)
+- [AWS Nitro Enclaves](website/src/content/docs/vaults/nitro.md)
+- [GCP Confidential Space](website/src/content/docs/vaults/confidentialspace.md)
+
 Operator and contributor runbooks remain at stable repository paths:
 
 - [`deploy/README.md`](deploy/README.md) — operator install runbook

@@ -17,6 +17,24 @@ Run the integration tests explicitly:
 cargo test --test integration
 ```
 
+Run vault driver unit tests explicitly:
+
+```bash
+cargo test --lib vault::
+```
+
+Run docs drift (example config, vault pages, README index):
+
+```bash
+cargo test --test docs_drift
+```
+
+Run mock-vault smoke scripts (same job as CI `smoke-mock-vault`):
+
+```bash
+cargo test --test remote_e2e_job_shell -- --ignored --nocapture
+```
+
 Hardware tests are opt-in and intentionally strict once enabled:
 
 ```bash
@@ -25,8 +43,8 @@ OPENKMS_HARDWARE_TESTS=1 cargo test --test integration -- --ignored
 
 ## Automation Lanes
 
-- [`ci.yml`](https://github.com/poroburu/openkms/blob/main/.github/workflows/ci.yml) runs formatting, clippy, tests, docs drift checks, rustdoc, OpenAPI drift checks, and website build checks.
-- [`remote-e2e.yml`](https://github.com/poroburu/openkms/blob/main/.github/workflows/remote-e2e.yml) is a manual staging smoke test against a deployed signer.
+- [`ci.yml`](https://github.com/poroburu/openkms/blob/main/.github/workflows/ci.yml) runs formatting, clippy, tests, vault driver checks, docs drift (including vault pages), rustdoc, OpenAPI drift checks, website build checks, and mock-vault smoke scripts — no remote staging host required.
+- [`remote-e2e.yml`](https://github.com/poroburu/openkms/blob/main/.github/workflows/remote-e2e.yml) is a manual staging smoke test against a deployed signer (requires Tailscale and secrets).
 - [`broadcast-e2e.yml`](https://github.com/poroburu/openkms/blob/main/.github/workflows/broadcast-e2e.yml) is a manual live testnet broadcast gate.
 
 The E2E wrapper scripts share Solana and Cosmos default resolution through

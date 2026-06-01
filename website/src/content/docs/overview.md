@@ -23,7 +23,7 @@ Every signing request crosses these layers in order. Each is fail-closed and
 emits to the audit log.
 
 ```text
-Strategy --> Auth --> Decode --> Policy --> Replay --> YubiHSM2
+Strategy --> Auth --> Decode --> Policy --> Replay --> SigningVault
                                                            |
                                                        Signature
 ```
@@ -33,15 +33,16 @@ Strategy --> Auth --> Decode --> Policy --> Replay --> YubiHSM2
 3. **Policy** — rate limits, per-tx and rolling daily caps, program / message
    / recipient allowlists, kill switch.
 4. **Replay** — cache for deterministic signatures over a configured window.
-5. **YubiHSM2** — sign inside hardware. Append-only audit log + Prometheus
-   counters update on accept and on every denial.
+5. **Signing vault** — sign inside the configured backend (YubiHSM2 in
+   production). Append-only audit log + Prometheus counters update on accept
+   and on every denial.
 
 ## Trust split
 
 - **Host plane** runs the HTTP server, policy, replay cache, audit log, and
   metrics on a hardened systemd unit.
 - **HSM plane** holds signing keys, the wrap key, and the runtime auth key
-  inside the YubiHSM2.
+  inside the YubiHSM2 (production `yubihsm` vault driver).
 
 A privileged attacker on the host can ask the connector for signatures within
 the policy. Policy is the blast-radius bound; the HSM is the key-egress bound.
@@ -52,6 +53,8 @@ the policy. Policy is the blast-radius bound; the HSM is the key-egress bound.
   provisioning, backup, and service start.
 - [Configuration](/openkms/guides/configuration/) — every block in the
   canonical TOML.
+- [Vaults](/openkms/vaults/overview/) — signing backend drivers (`yubihsm`,
+  `file`, cloud / TEE stubs).
 - [Policy Authoring](/openkms/guides/policy-authoring/) — how the policy
   engine evaluates a signing request.
 - [Openclaw Integration](/openkms/guides/openclaw-integration/) — how a

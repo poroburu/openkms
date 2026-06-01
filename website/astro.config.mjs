@@ -62,6 +62,20 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Vaults',
+          items: [
+            { label: 'Overview', slug: 'vaults/overview' },
+            { label: 'YubiHSM', slug: 'vaults/yubihsm' },
+            { label: 'File (dev)', slug: 'vaults/file' },
+            { label: 'AWS KMS', slug: 'vaults/awskms' },
+            { label: 'Azure Key Vault', slug: 'vaults/azure' },
+            { label: 'Google Cloud KMS', slug: 'vaults/cloudkms' },
+            { label: 'HashiCorp Vault', slug: 'vaults/hashicorpvault' },
+            { label: 'AWS Nitro Enclaves', slug: 'vaults/nitro' },
+            { label: 'GCP Confidential Space', slug: 'vaults/confidentialspace' },
+          ],
+        },
+        {
           label: 'Reference',
           items: [
             { label: 'HTTP API', slug: 'reference/http-api' },

@@ -23,7 +23,7 @@ Factory-reset and provision the HSM from that mnemonic:
 ./target/mock-release/openkms setup --mnemonic-file /secure/usb/mnemonic.txt
 ```
 
-Derive the runtime signer password that `[hsm].password_file` in
+Derive the runtime signer password that `[vaults.hsm].password_file` in
 `config.toml` points at:
 
 ```bash
@@ -49,7 +49,7 @@ auth key (slot 3) is intentionally not allowed to do. Passing `--mnemonic-file`
 makes the CLI authenticate as the provisioner (slot 2) for the duration of the
 command. To use a stored provisioner password instead, pass
 `--auth-key-id 2` on the global CLI and configure that password through the
-normal `[hsm].password_file` mechanism.
+normal `[vaults.hsm].password_file` mechanism.
 
 Back up every signing key to a wrap-encrypted blob:
 

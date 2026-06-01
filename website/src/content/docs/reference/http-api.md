@@ -21,8 +21,8 @@ Direct artifact links:
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| `GET` | `/health` | none | Health check and HSM probe state. |
-| `GET` | `/keys` | none | List configured keys and runtime enabled state. |
+| `GET` | `/health` | none | Health check and vault probe state (`vault_up`). |
+| `GET` | `/keys` | none | List configured keys (`vault`, `key_id`) and runtime enabled state. |
 | `GET` | `/policy` | signer bearer | List effective signing policies and live usage counters. |
 | `GET` | `/policy/{label}` | signer bearer | Read one key's effective policy before signing. |
 | `POST` | `/sign/solana` | signer bearer | Sign a Solana `VersionedMessage`. |
@@ -132,5 +132,5 @@ JSON API errors use this shape:
 ```
 
 Policy denials return `403` or `429` depending on the denial reason. Decode
-errors return `400`, unknown labels return `404`, and HSM/internal failures
+errors return `400`, unknown labels return `404`, and vault or internal failures
 return `500`.

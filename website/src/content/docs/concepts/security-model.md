@@ -8,7 +8,9 @@ description: What the HSM protects, what still depends on the host, and how reco
 openKMS speaks plain HTTP. Keep it on loopback, behind an SSH tunnel, or behind
 a reverse proxy or load balancer that terminates TLS before wider exposure.
 
-## What The HSM Guarantees
+## What The Vault Guarantees (YubiHSM production path)
+
+When configured with `driver = "yubihsm"`, the signing vault provides:
 
 - Signing keys exist only inside the YubiHSM2.
 - Signing operations go through `yubihsm::Client::sign_*`.
