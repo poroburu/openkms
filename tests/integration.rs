@@ -11,11 +11,11 @@ use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use openkms::{
     config::{
-        AddressStyle, AllowedProgram, AuditConfig, Config, CosmosConfig, HsmConfig, KeyDef,
-        KeyPolicy, ServerConfig,
+        AddressStyle, AllowedProgram, AuditConfig, Config, CosmosConfig, KeyDef, KeyPolicy,
+        ServerConfig, mock_yubihsm_vaults,
     },
-    hsm::{Hsm, hsm_types as H},
     server::{AppState, router},
+    vault::{Hsm, YubiVault, hsm_types as H},
 };
 use reqwest::Client;
 use solana_sdk::{
@@ -41,11 +41,7 @@ fn base_config(state_dir: &Path, audit_path: &Path, listen: &str, keys: Vec<KeyD
             inflight_limit: 1,
             replay_window_secs: 1,
         },
-        hsm: HsmConfig {
-            connector_url: "mock".into(),
-            auth_key_id: 1,
-            password_file: "/tmp/unused".into(),
-        },
+        vaults: mock_yubihsm_vaults("/tmp/unused".as_ref()),
         audit: AuditConfig {
             path: audit_path.into(),
             hmac_key_file: None,
@@ -60,7 +56,8 @@ fn solana_key(label: &str, object_id: u16) -> KeyDef {
     KeyDef {
         label: label.into(),
         chain: openkms::chain::Chain::Solana,
-        object_id,
+        vault: "hsm".into(),
+        key_id: format!("0x{object_id:04x}"),
         derivation_path: None,
         address_style: AddressStyle::Solana,
         default_hrp: None,
@@ -113,7 +110,11 @@ async fn spawn_server(
     signer_token: &str,
     admin_token: &str,
 ) -> (String, JoinHandle<()>) {
-    let state = AppState::build(cfg, hsm, signer_token.into(), admin_token.into())
+    use std::{collections::HashMap, sync::Arc};
+
+    let vault: Arc<dyn openkms::vault::SigningVault> = Arc::new(hsm.clone());
+    let vaults = HashMap::from([("hsm".to_string(), vault)]);
+    let state = AppState::build(cfg, vaults, signer_token.into(), admin_token.into())
         .await
         .expect("build app state");
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
@@ -148,7 +149,7 @@ async fn wait_until_ready(base_url: &str) {
 async fn serves_health_and_keys_over_real_http() {
     let state_dir = TempDir::new().expect("tempdir");
     let audit = state_dir.path().join("audit.jsonl");
-    let hsm = Hsm::open_mock(1, b"password").expect("mock hsm");
+    let hsm = YubiVault::open_mock(1, b"password").expect("mock hsm");
     let cfg = base_config(state_dir.path(), &audit, "127.0.0.1:0", vec![]);
     let (base_url, server_handle) = spawn_server(cfg, hsm, SIGNER_TOKEN, ADMIN_TOKEN).await;
     let client = Client::new();
@@ -165,7 +166,7 @@ async fn serves_health_and_keys_over_real_http() {
         .expect("health body");
     assert_eq!(health["status"], "ok");
     assert!(
-        health["hsm_up"].is_null() || health["hsm_up"] == true,
+        health["vault_up"].is_null() || health["vault_up"] == true,
         "expected null or true on first health"
     );
 
@@ -179,7 +180,7 @@ async fn serves_health_and_keys_over_real_http() {
         .json()
         .await
         .expect("health body 2");
-    assert_eq!(health2["hsm_up"], true);
+    assert_eq!(health2["vault_up"], true);
 
     let keys: serde_json::Value = client
         .get(format!("{base_url}/keys"))
@@ -205,7 +206,7 @@ async fn serves_health_and_keys_over_real_http() {
 async fn unauthenticated_sign_is_rejected_over_real_http() {
     let state_dir = TempDir::new().expect("tempdir");
     let audit = state_dir.path().join("audit.jsonl");
-    let hsm = Hsm::open_mock(1, b"password").expect("mock hsm");
+    let hsm = YubiVault::open_mock(1, b"password").expect("mock hsm");
     let cfg = base_config(state_dir.path(), &audit, "127.0.0.1:0", vec![]);
     let (base_url, server_handle) = spawn_server(cfg, hsm, SIGNER_TOKEN, ADMIN_TOKEN).await;
     let client = Client::new();
@@ -237,7 +238,7 @@ async fn unauthenticated_sign_is_rejected_over_real_http() {
 async fn signs_and_honors_admin_disable_over_real_http() {
     let state_dir = TempDir::new().expect("tempdir");
     let audit = state_dir.path().join("audit.jsonl");
-    let hsm = Hsm::open_mock(1, b"password").expect("mock hsm");
+    let hsm = YubiVault::open_mock(1, b"password").expect("mock hsm");
     let payer = provision_mock_solana_key(&hsm, SOLANA_LABEL, SOLANA_OBJECT_ID).await;
     let cfg = base_config(
         state_dir.path(),
@@ -360,7 +361,7 @@ async fn signs_and_honors_admin_disable_over_real_http() {
 async fn admin_policy_overlay_updates_effective_policy_over_real_http() {
     let state_dir = TempDir::new().expect("tempdir");
     let audit = state_dir.path().join("audit.jsonl");
-    let hsm = Hsm::open_mock(1, b"password").expect("mock hsm");
+    let hsm = YubiVault::open_mock(1, b"password").expect("mock hsm");
     let _payer = provision_mock_solana_key(&hsm, SOLANA_LABEL, SOLANA_OBJECT_ID).await;
     let cfg = base_config(
         state_dir.path(),

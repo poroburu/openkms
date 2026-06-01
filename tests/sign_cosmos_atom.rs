@@ -15,7 +15,7 @@ use cosmrs::proto::cosmos::{
 use k256::ecdsa::{
     Signature as K256Sig, SigningKey, VerifyingKey, signature::hazmat::PrehashVerifier,
 };
-use openkms::{chain::cosmos::derive_address, config::AddressStyle, hsm::Hsm};
+use openkms::{chain::cosmos::derive_address, config::AddressStyle, vault::Hsm};
 use prost::Message;
 use sha2::{Digest, Sha256};
 

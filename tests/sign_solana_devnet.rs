@@ -8,7 +8,7 @@ mod common;
 
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use ed25519_dalek::{Signature as Ed25519Sig, Verifier, VerifyingKey as Ed25519Vk};
-use openkms::hsm::Hsm;
+use openkms::vault::Hsm;
 use solana_sdk::{
     hash::Hash,
     message::{Message as LegacyMessage, VersionedMessage},

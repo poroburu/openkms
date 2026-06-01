@@ -13,7 +13,7 @@ use k256::ecdsa::SigningKey;
 use openkms::{
     chain::cosmos::derive_address,
     config::AddressStyle,
-    hsm::{Hsm, hsm_types as H},
+    vault::{Hsm, YubiVault, hsm_types as H},
 };
 use prost::Message;
 use solana_sdk::{
@@ -75,7 +75,7 @@ async fn wait_health(base: &str) {
 // Run only in the dedicated CI job: `cargo test --test remote_e2e_job_shell -- --ignored`
 // so `cargo test --all-targets` logs stay focused on unit/integration tests.
 #[tokio::test]
-#[ignore = "CI job remote-e2e-job-shell (cargo test --test remote_e2e_job_shell -- --ignored)"]
+#[ignore = "CI job smoke-mock-vault (cargo test --test remote_e2e_job_shell -- --ignored)"]
 async fn run_remote_e2e_job_script_solana_smoke() {
     let state_dir = TempDir::new().expect("tempdir");
     let audit = state_dir.path().join("audit.jsonl");
@@ -231,7 +231,7 @@ fn build_cosmos_sign_doc(
 
 // Run only in the dedicated CI job: `cargo test --test remote_e2e_job_shell -- --ignored`
 #[tokio::test]
-#[ignore = "CI job remote-e2e-job-shell (cargo test --test remote_e2e_job_shell -- --ignored)"]
+#[ignore = "CI job smoke-mock-vault (cargo test --test remote_e2e_job_shell -- --ignored)"]
 async fn run_remote_e2e_job_script_cosmos_smoke() {
     let state_dir = TempDir::new().expect("tempdir");
     let audit = state_dir.path().join("audit.jsonl");

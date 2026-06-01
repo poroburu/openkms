@@ -26,7 +26,7 @@ use std::{str::FromStr, time::Duration};
 use anyhow::{Context, Result, anyhow, bail};
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use ed25519_dalek::SigningKey;
-use openkms::hsm::Hsm;
+use openkms::vault::Hsm;
 use serde_json::{Value, json};
 use solana_sdk::{
     hash::Hash,

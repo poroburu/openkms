@@ -39,7 +39,16 @@ fn example_config_deserializes_and_validates_with_real_secret_paths() {
     let mut cfg: Config = toml::from_str(EXAMPLE_CONFIG).expect("example config parses");
     cfg.server.signer_token_file = write_secret(tmp.path(), "signer.token");
     cfg.server.admin_token_file = write_secret(tmp.path(), "admin.token");
-    cfg.hsm.password_file = write_secret(tmp.path(), "hsm-password");
+    let pw = write_secret(tmp.path(), "hsm-password");
+    cfg.vaults
+        .get_mut("hsm")
+        .expect("example vaults.hsm")
+        .as_table_mut()
+        .expect("vault table")
+        .insert(
+            "password_file".to_string(),
+            toml::Value::String(pw.display().to_string()),
+        );
     cfg.audit.hmac_key_file = Some(write_secret(tmp.path(), "audit-hmac.key"));
     cfg.validate().expect("example config validates");
 }
@@ -84,6 +93,15 @@ fn consumer_docs_exist_and_are_indexed_in_readme() {
         "website/src/content/docs/concepts/security-model.md",
         "website/src/content/docs/reference/architecture.md",
         "website/src/content/docs/reference/http-api.md",
+        "website/src/content/docs/vaults/overview.md",
+        "website/src/content/docs/vaults/yubihsm.md",
+        "website/src/content/docs/vaults/file.md",
+        "website/src/content/docs/vaults/awskms.md",
+        "website/src/content/docs/vaults/azure.md",
+        "website/src/content/docs/vaults/cloudkms.md",
+        "website/src/content/docs/vaults/hashicorpvault.md",
+        "website/src/content/docs/vaults/nitro.md",
+        "website/src/content/docs/vaults/confidentialspace.md",
     ] {
         assert!(repo_path(path).exists(), "missing consumer doc: {path}");
         assert!(README.contains(path), "README should point at {path}");

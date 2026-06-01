@@ -14,11 +14,11 @@ use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use openkms::{
     chain::Chain,
     config::{
-        AddressStyle, AllowedMessage, AllowedProgram, AuditConfig, Config, CosmosConfig, HsmConfig,
-        KeyDef, KeyPolicy, ServerConfig,
+        AddressStyle, AllowedMessage, AllowedProgram, AuditConfig, Config, CosmosConfig, KeyDef,
+        KeyPolicy, ServerConfig, mock_yubihsm_vaults,
     },
-    hsm::{Hsm, hsm_types as H},
     server::{AppState, router},
+    vault::{Hsm, YubiVault, hsm_types as H},
 };
 use tokio::net::TcpListener;
 
@@ -109,11 +109,7 @@ pub fn base_config(state_dir: PathBuf, audit_path: PathBuf, keys: Vec<KeyDef>) -
             inflight_limit: 64,
             replay_window_secs: 120,
         },
-        hsm: HsmConfig {
-            connector_url: "mock".into(),
-            auth_key_id: 1,
-            password_file: "/tmp/unused".into(),
-        },
+        vaults: mock_yubihsm_vaults("/tmp/unused".as_ref()),
         audit: AuditConfig {
             path: audit_path,
             hmac_key_file: None,
@@ -128,6 +124,11 @@ pub fn base_config(state_dir: PathBuf, audit_path: PathBuf, keys: Vec<KeyDef>) -
         state_dir: Some(state_dir),
         keys,
     }
+}
+
+/// Open the mock YubiHSM vault used by integration tests (for key provisioning).
+pub fn open_test_hsm() -> Hsm {
+    YubiVault::open_mock(1, b"password").expect("open mock yubihsm")
 }
 
 /// Import a raw 32-byte secp256k1 scalar into the mock HSM at `object_id`.
@@ -162,13 +163,18 @@ pub async fn provision_ed25519(hsm: &Hsm, object_id: u16, label: &str, seed: &[u
         .expect("put_asymmetric_key (Ed25519) into mock HSM");
 }
 
+fn format_key_id(object_id: u16) -> String {
+    format!("0x{object_id:04x}")
+}
+
 /// Permissive Cosmos `KeyDef`: rate limits high enough not to interfere,
 /// the supplied `MsgSend` per-tx cap, and a single allowlisted message type.
 pub fn cosmos_key_def(label: &str, object_id: u16, hrp: &str) -> KeyDef {
     KeyDef {
         label: label.into(),
         chain: Chain::Cosmos,
-        object_id,
+        vault: "hsm".into(),
+        key_id: format_key_id(object_id),
         derivation_path: None,
         address_style: AddressStyle::Cosmos,
         default_hrp: Some(hrp.into()),
@@ -198,7 +204,8 @@ pub fn solana_key_def(label: &str, object_id: u16) -> KeyDef {
     KeyDef {
         label: label.into(),
         chain: Chain::Solana,
-        object_id,
+        vault: "hsm".into(),
+        key_id: format_key_id(object_id),
         derivation_path: None,
         address_style: AddressStyle::Solana,
         default_hrp: None,
@@ -222,9 +229,13 @@ pub fn solana_key_def(label: &str, object_id: u16) -> KeyDef {
 /// Build the `AppState`, bind an ephemeral TCP socket, and spawn axum on it.
 /// Returns a [`ServerHandle`] whose `Drop` aborts the background task.
 pub async fn spawn(cfg: Config, hsm: Hsm) -> ServerHandle {
+    use std::{collections::HashMap, sync::Arc};
+
     let signer_token = "signer-token-test".to_string();
     let admin_token = "admin-token-test".to_string();
-    let state = AppState::build(cfg, hsm.clone(), signer_token.clone(), admin_token.clone())
+    let vault: Arc<dyn openkms::vault::SigningVault> = Arc::new(hsm.clone());
+    let vaults = HashMap::from([("hsm".to_string(), vault)]);
+    let state = AppState::build(cfg, vaults, signer_token.clone(), admin_token.clone())
         .await
         .expect("AppState::build");
     let app = router(state);
