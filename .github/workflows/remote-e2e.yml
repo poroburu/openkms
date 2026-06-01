@@ -12,8 +12,8 @@
 # Manual-only until you enable production staging gates. To run on every push to main, add under `on:`:
 #   push:
 #     branches: [main]
-# (and optionally `concurrency:` to cancel in-progress runs). Mock signing smoke
-# for scripts stays in `ci.yml` → job `remote-e2e-job-shell`.
+# (and optionally `concurrency:` to cancel in-progress runs). Mock-vault signing
+# smoke for scripts stays in `ci.yml` → job `smoke-mock-vault`.
 #
 # Without Tailscale, curl would originate from GitHub’s public runner IPs — see
 # docs/remote-e2e.md (nginx + deploy/nginx-openkms-remote-e2e.conf.example, or

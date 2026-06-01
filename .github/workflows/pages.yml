@@ -71,6 +71,11 @@ jobs:
           # marketing stylesheet.
           test -f dist/overview/index.html
           test -f dist/reference/http-api/index.html
+          test -f dist/vaults/overview/index.html
+          test -f dist/vaults/yubihsm/index.html
+          test -f dist/guides/configuration/index.html
+          grep -q "vault_up" dist/reference/http-api/index.html
+          grep -q "vaults.hsm" dist/guides/configuration/index.html
           if grep -q "index@_@astro" dist/overview/index.html; then
             echo "Marketing stylesheet leaked into Starlight docs page" >&2
             exit 1

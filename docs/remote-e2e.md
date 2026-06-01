@@ -91,8 +91,9 @@ composite action) so [act](https://github.com/nektos/act) and GitHub both execut
 same shell as operators. Ensure `OPENKMS_REMOTE_E2E_*_REQUEST_B64` exist in your
 `.secrets` when using `gh act workflow_dispatch -W .github/workflows/remote-e2e.yml`.
 Self-contained regression for this script lives in **`tests/remote_e2e_job_shell.rs`**
-and runs in its **own CI job** under **`ci.yml`** (`cargo test --test remote_e2e_job_shell -- --ignored`)
-so the main **`cargo test`** log stays shorter; all Rust jobs share **`rust-cache`**
+and runs in the **`smoke-mock-vault`** job under **`ci.yml`**
+(`cargo test --test remote_e2e_job_shell -- --ignored`) against an in-process mock
+vault — no remote staging host required. All Rust jobs share **`rust-cache`**
 with **`shared-key: openkms`** to reuse compiled deps.
 
 ## Tailscale path (default in `remote-e2e.yml`)
@@ -129,7 +130,7 @@ the CI node’s tag or user to the signer’s port.
    allows RFC1918 private ranges **but not** **`100.64.0.0/10`**, so **direct** binds to
    **`0.0.0.0`** still see **dropped** connections from CI unless you add a drop-in
    **`IPAddressAllow=100.64.0.0/10`** (or use nginx so the peer is **localhost**).
-5. **`yubihsm-connector`** — **`Requires=`** / running; **`[hsm].connector_url`** reachable
+5. **`yubihsm-connector`** — **`Requires=`** / running; **`[vaults.hsm].connector_url`** reachable
    from the **`openkms`** process.
 6. **Bearer token** — **`/etc/openkms/signer.token`** matches **`OPENKMS_SIGNER_TOKEN`**
    in GitHub / **`.secrets`**.
