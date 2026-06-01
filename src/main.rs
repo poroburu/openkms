@@ -1,8 +1,7 @@
 //! openKMS CLI entry point.
 //!
-//! All HSM operations go through the [`openkms::hsm::Hsm`] wrapper so the same
-//! paths work against the real device (via `yubihsm-connector`), a USB-attached
-//! YubiHSM2, or the in-process mockhsm used by tests and local development.
+//! Ceremony and key-management commands talk to YubiHSM2 via [`openkms::vault::YubiVault`].
+//! The `run` subcommand opens all configured vault backends from `[vaults.*]`.
 
 mod cli_backup;
 mod cli_ceremony;
@@ -12,6 +11,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     str::FromStr,
+    sync::Arc,
     time::Duration,
 };
 
@@ -22,7 +22,7 @@ use openkms::{
     chain::Chain,
     config::Config,
     derive::{self, SEED_LEN, mnemonic_from_entropy, mnemonic_to_seed},
-    hsm::{Hsm, hsm_types as H, ids, provisioner_auth_capabilities_setup},
+    vault::{Hsm, YubiVault, hsm_types as H, ids, open_vaults, provisioner_auth_capabilities_setup},
     server,
 };
 use tracing::{info, warn};
@@ -239,8 +239,8 @@ async fn setup(cli: &CliCtx, args: SetupArgs) -> Result<()> {
     let connector_str = cli
         .connector
         .clone()
-        .or_else(|| cfg.as_ref().map(|c| c.hsm.connector_url.clone()))
-        .ok_or_else(|| anyhow!("--connector or [hsm].connector_url is required for setup"))?;
+        .or_else(|| cfg.as_ref().and_then(|c| c.yubihsm_connector_url().ok()))
+        .ok_or_else(|| anyhow!("--connector or [vaults.*] yubihsm connector_url is required for setup"))?;
 
     // Before reset we must authenticate using secrets tied to this mnemonic (or
     // factory defaults). Do not use `open_hsm(cli)` here: `--auth-key-id` and the
@@ -451,19 +451,33 @@ async fn run_service(cli: &CliCtx) -> Result<()> {
     let cfg = Config::load(&cli.config)?;
     let signer_token = Config::read_secret_file(&cfg.server.signer_token_file)?;
     let admin_token = Config::read_secret_file(&cfg.server.admin_token_file)?;
-    let password = Config::read_hsm_password_file(&cfg.hsm.password_file)?;
-    let hsm = if cli.mock {
-        Hsm::open_mock(cfg.hsm.auth_key_id, password.as_slice())?
-    } else {
-        Hsm::open_http(
-            &cfg.hsm.connector_url,
-            cfg.hsm.auth_key_id,
-            password.as_slice(),
-        )?
-    };
-    // Warm-up: open audit log now so we fail fast if the directory is bad.
+    let mut vaults = open_vaults(&cfg.vaults)?;
+    if cli.mock {
+        for (name, table) in &cfg.vaults {
+            if cfg.vault_driver(name)? != "yubihsm" {
+                continue;
+            }
+            let auth_key_id = table
+                .get("auth_key_id")
+                .and_then(|v| v.as_integer())
+                .and_then(|i| u16::try_from(i).ok())
+                .unwrap_or(1);
+            let password_file = table
+                .get("password_file")
+                .and_then(|v| v.as_str())
+                .map(std::path::Path::new)
+                .ok_or_else(|| anyhow!("vault {name:?}: yubihsm requires password_file"))?;
+            let password = Config::read_hsm_password_file(password_file)?;
+            vaults.insert(
+                name.clone(),
+                Arc::new(
+                    YubiVault::open_mock(auth_key_id, password.as_slice())?.with_name(name),
+                ),
+            );
+        }
+    }
     let _ = AuditLog::open(&cfg.audit)?;
-    let state = server::AppState::build(cfg, hsm, signer_token, admin_token).await?;
+    let state = server::AppState::build(cfg, vaults, signer_token, admin_token).await?;
     server::serve(state).await
 }
 
@@ -529,8 +543,8 @@ fn open_hsm_as_provisioner_with_seed(cli: &CliCtx, seed: &[u8; SEED_LEN]) -> Res
     let connector = cli
         .connector
         .clone()
-        .or_else(|| cfg.as_ref().map(|c| c.hsm.connector_url.clone()))
-        .ok_or_else(|| anyhow!("--connector or [hsm].connector_url is required"))?;
+        .or_else(|| cfg.as_ref().and_then(|c| c.yubihsm_connector_url().ok()))
+        .ok_or_else(|| anyhow!("--connector or [vaults.*] yubihsm connector_url is required"))?;
     Hsm::open_http(
         &connector,
         ids::PROVISIONER_AUTH_KEY_ID,
@@ -555,14 +569,14 @@ async fn open_hsm(cli: &CliCtx) -> Result<Hsm> {
     let connector = cli
         .connector
         .clone()
-        .or_else(|| cfg.as_ref().map(|c| c.hsm.connector_url.clone()))
-        .ok_or_else(|| anyhow!("--connector or [hsm].connector_url is required"))?;
+        .or_else(|| cfg.as_ref().and_then(|c| c.yubihsm_connector_url().ok()))
+        .ok_or_else(|| anyhow!("--connector or [vaults.*] yubihsm connector_url is required"))?;
     let auth_key_id = cli
         .auth_key_id
-        .or_else(|| cfg.as_ref().map(|c| c.hsm.auth_key_id))
+        .or_else(|| cfg.as_ref().and_then(|c| c.yubihsm_auth_key_id().ok()))
         .unwrap_or(ids::SIGNER_AUTH_KEY_ID);
     let password = if let Some(c) = cfg.as_ref() {
-        Config::read_hsm_password_file(&c.hsm.password_file)?
+        Config::read_hsm_password_file(&c.yubihsm_password_file()?)?
     } else {
         let s = std::env::var("OPENKMS_HSM_PASSWORD")
             .context("set OPENKMS_HSM_PASSWORD or use a config")?;

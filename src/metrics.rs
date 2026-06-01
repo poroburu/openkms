@@ -24,7 +24,7 @@ struct MetricsInner {
     pub policy_denials_total: IntCounterVec,
     pub replay_hits_total: IntCounter,
     pub inflight: IntGauge,
-    pub hsm_up: IntGauge,
+    pub vault_up: IntGauge,
     pub signer_errors_total: IntCounterVec,
 }
 
@@ -74,11 +74,11 @@ impl Metrics {
         ))?;
         registry.register(Box::new(inflight.clone()))?;
 
-        let hsm_up = IntGauge::with_opts(Opts::new(
-            "openkms_hsm_up",
-            "1 when the HSM responded to its last ping, 0 otherwise.",
+        let vault_up = IntGauge::with_opts(Opts::new(
+            "openkms_vault_up",
+            "1 when the signing vault responded to its last readiness check, 0 otherwise.",
         ))?;
-        registry.register(Box::new(hsm_up.clone()))?;
+        registry.register(Box::new(vault_up.clone()))?;
 
         let signer_errors_total = IntCounterVec::new(
             Opts::new(
@@ -97,7 +97,7 @@ impl Metrics {
                 policy_denials_total,
                 replay_hits_total,
                 inflight,
-                hsm_up,
+                vault_up,
                 signer_errors_total,
             }),
         })
@@ -118,8 +118,8 @@ impl Metrics {
     pub fn inflight(&self) -> &IntGauge {
         &self.inner.inflight
     }
-    pub fn hsm_up(&self) -> &IntGauge {
-        &self.inner.hsm_up
+    pub fn vault_up(&self) -> &IntGauge {
+        &self.inner.vault_up
     }
     pub fn signer_errors_total(&self) -> &IntCounterVec {
         &self.inner.signer_errors_total
@@ -152,7 +152,7 @@ mod tests {
             .with_label_values(&["cosmos", "k2", "rate_limited"])
             .inc();
         m.inflight().inc();
-        m.hsm_up().set(1);
+        m.vault_up().set(1);
         m.replay_hits_total().inc();
 
         let (text, ct) = m.render().unwrap();
@@ -162,7 +162,7 @@ mod tests {
             "openkms_sign_duration_seconds",
             "openkms_policy_denials_total",
             "openkms_inflight",
-            "openkms_hsm_up",
+            "openkms_vault_up",
             "openkms_replay_hits_total",
         ] {
             assert!(text.contains(needle), "missing metric {needle} in:\n{text}");

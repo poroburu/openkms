@@ -19,7 +19,7 @@ use crate::{
         SignRequest, TokenRef, Transfer,
     },
     config::KeyDef,
-    hsm::Hsm,
+    vault::{KeyId, SigningVault},
 };
 
 /// Solana's `Message` packet limit (bytes). Reject oversized payloads up front.
@@ -93,8 +93,8 @@ pub struct SolanaSigner {
 }
 
 impl SolanaSigner {
-    pub async fn from_hsm(hsm: &Hsm, key: &KeyDef) -> anyhow::Result<Self> {
-        let pk = hsm.get_ed25519_pubkey(key.object_id).await?;
+    pub async fn from_vault(vault: &dyn SigningVault, _key: &KeyDef, key_id: &KeyId) -> anyhow::Result<Self> {
+        let pk = vault.ed25519_pubkey(key_id).await?;
         let address = bs58::encode(&pk).into_string();
         Ok(Self {
             pubkey: pk,
@@ -202,12 +202,13 @@ impl ChainSigner for SolanaSigner {
 
     async fn sign(
         &self,
-        hsm: &Hsm,
-        key: &KeyDef,
+        vault: &dyn SigningVault,
+        _key: &KeyDef,
+        key_id: &KeyId,
         intent: Self::Intent,
     ) -> ChainResult<Self::Response> {
-        let sig = hsm
-            .sign_ed25519(key.object_id, &intent.signing_digest)
+        let sig = vault
+            .sign_ed25519(key_id, &intent.signing_digest())
             .await
             .map_err(ChainError::Hsm)?;
         Ok(SolanaResponse {
@@ -364,7 +365,8 @@ mod tests {
         let key = KeyDef {
             label: "test".into(),
             chain: Chain::Solana,
-            object_id: 1,
+            vault: "hsm".into(),
+            key_id: "0x0001".into(),
             derivation_path: None,
             address_style: crate::config::AddressStyle::Solana,
             default_hrp: None,
@@ -403,7 +405,8 @@ mod tests {
         let key = KeyDef {
             label: "test".into(),
             chain: Chain::Solana,
-            object_id: 1,
+            vault: "hsm".into(),
+            key_id: "0x0001".into(),
             derivation_path: None,
             address_style: crate::config::AddressStyle::Solana,
             default_hrp: None,
@@ -428,7 +431,8 @@ mod tests {
         let key = KeyDef {
             label: "test".into(),
             chain: Chain::Solana,
-            object_id: 1,
+            vault: "hsm".into(),
+            key_id: "0x0001".into(),
             derivation_path: None,
             address_style: crate::config::AddressStyle::Solana,
             default_hrp: None,

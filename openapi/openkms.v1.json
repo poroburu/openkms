@@ -218,21 +218,21 @@
       },
       "Health": {
         "properties": {
-          "hsm_up": {
+          "status": {
+            "const": "ok",
+            "type": "string"
+          },
+          "vault_up": {
             "description": "Null on the first response after process start; boolean thereafter.",
             "type": [
               "boolean",
               "null"
             ]
-          },
-          "status": {
-            "const": "ok",
-            "type": "string"
           }
         },
         "required": [
           "status",
-          "hsm_up"
+          "vault_up"
         ],
         "type": "object"
       },
@@ -380,13 +380,14 @@
           "enabled": {
             "type": "boolean"
           },
+          "key_id": {
+            "type": "string"
+          },
           "label": {
             "type": "string"
           },
-          "object_id": {
-            "maximum": 65535,
-            "minimum": 0,
-            "type": "integer"
+          "vault": {
+            "type": "string"
           }
         },
         "required": [
@@ -394,7 +395,8 @@
           "chain",
           "address",
           "enabled",
-          "object_id",
+          "vault",
+          "key_id",
           "derivation_path"
         ],
         "type": "object"
@@ -454,13 +456,11 @@
           "effective_enabled": {
             "type": "boolean"
           },
-          "label": {
+          "key_id": {
             "type": "string"
           },
-          "object_id": {
-            "maximum": 65535,
-            "minimum": 0,
-            "type": "integer"
+          "label": {
+            "type": "string"
           },
           "overlay": {
             "$ref": "#/components/schemas/KeyPolicyPatch",
@@ -479,13 +479,17 @@
           },
           "runtime": {
             "$ref": "#/components/schemas/PolicyRuntime"
+          },
+          "vault": {
+            "type": "string"
           }
         },
         "required": [
           "label",
           "chain",
           "address",
-          "object_id",
+          "vault",
+          "key_id",
           "derivation_path",
           "effective_enabled",
           "policy",

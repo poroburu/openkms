@@ -239,11 +239,7 @@ mod tests {
                 inflight_limit: 1,
                 replay_window_secs: 1,
             },
-            hsm: crate::config::HsmConfig {
-                connector_url: "mock".into(),
-                auth_key_id: 1,
-                password_file: "/tmp/x".into(),
-            },
+            vaults: crate::config::test_mock_vaults(),
             audit: crate::config::AuditConfig {
                 path: "/tmp/audit.jsonl".into(),
                 hmac_key_file: None,
@@ -253,7 +249,8 @@ mod tests {
             keys: vec![KeyDef {
                 label: "k1".into(),
                 chain: Chain::Solana,
-                object_id: 1,
+                vault: "hsm".into(),
+                key_id: "0x0001".into(),
                 derivation_path: None,
                 address_style: Default::default(),
                 default_hrp: None,

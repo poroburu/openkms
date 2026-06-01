@@ -602,11 +602,7 @@ mod tests {
                 inflight_limit: 1,
                 replay_window_secs: 1,
             },
-            hsm: crate::config::HsmConfig {
-                connector_url: "http://x".into(),
-                auth_key_id: 3,
-                password_file: "/tmp/x".into(),
-            },
+            vaults: crate::config::test_mock_vaults(),
             audit: crate::config::AuditConfig {
                 path: "/tmp/a".into(),
                 hmac_key_file: None,
@@ -616,7 +612,8 @@ mod tests {
             keys: vec![ConfigKey {
                 label: "k1".into(),
                 chain,
-                object_id: 1,
+                vault: "hsm".into(),
+                key_id: "0x0001".into(),
                 derivation_path: None,
                 address_style: AddressStyle::Cosmos,
                 default_hrp: None,

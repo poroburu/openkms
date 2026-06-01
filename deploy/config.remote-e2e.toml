@@ -17,7 +17,8 @@ admin_token_file   = "/etc/openkms/admin.token"
 inflight_limit     = 64
 replay_window_secs = 120
 
-[hsm]
+[vaults.hsm]
+driver        = "yubihsm"
 connector_url = "http://127.0.0.1:12345"
 auth_key_id   = 3
 password_file = "/etc/openkms/hsm-password"
@@ -40,7 +41,8 @@ accepted_pubkey_type_urls = [
 [[keys]]
 label            = "cosmos-hub-0"
 chain            = "cosmos"
-object_id        = 0x0100
+vault  = "hsm"
+key_id = "0x0100"
 derivation_path  = "m/44'/118'/0'/0/0"
 address_style    = "cosmos"
 default_hrp      = "cosmos"
@@ -61,7 +63,8 @@ per_tx_cap_lamports  = "500000000"
 [[keys]]
 label     = "solana-hot-0"
 chain     = "solana"
-object_id = 0x0101
+vault  = "hsm"
+key_id = "0x0101"
 
 [keys.policy]
 enabled              = true
@@ -78,7 +81,8 @@ per_tx_cap_lamports  = "5000000000"
 [[keys]]
 label            = "cosmos-hub-0-gen"
 chain            = "cosmos"
-object_id        = 0x0102
+vault  = "hsm"
+key_id = "0x0102"
 address_style    = "cosmos"
 default_hrp      = "cosmos"
 
@@ -98,7 +102,8 @@ per_tx_cap_lamports  = "500000000"
 [[keys]]
 label     = "solana-hot-0-gen"
 chain     = "solana"
-object_id = 0x0103
+vault  = "hsm"
+key_id = "0x0103"
 
 [keys.policy]
 enabled              = true

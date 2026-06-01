@@ -1,20 +1,11 @@
-//! Chain-agnostic wrapper around `yubihsm::Client`.
+//! YubiHSM2 vault driver.
 //!
-//! Offers only the three primitives openKMS needs at runtime:
-//!   - [`Hsm::get_public_key`]
-//!   - [`Hsm::sign_ed25519`]
-//!   - [`Hsm::sign_ecdsa_prehashed`] — curve-parameterized over secp256k1 and
-//!     secp256r1 so the HSM layer is signature-scheme-complete for every
-//!     blockchain YubiHSM2 can reach (see the plan's "Signature-scheme
-//!     coverage across chains" section).
-//!
-//! The HSM client is serialized by a single `tokio::sync::Mutex`: YubiHSM2 is
-//! one USB device and the Yubico connector serializes access regardless, so
-//! openKMS does the serialization itself at the client level.
+//! Chain-agnostic wrapper around `yubihsm::Client` implementing [`SigningVault`].
 
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
+use async_trait::async_trait;
 use tokio::sync::Mutex;
 use yubihsm::{
     Client, Connector, Credentials,
@@ -23,11 +14,13 @@ use yubihsm::{
     connector::{HttpConfig, UsbConfig},
 };
 
+use serde::Deserialize;
+
+use super::{KeyId, SigningVault};
+use crate::config::Config;
+use zeroize::Zeroizing;
+
 /// Curve selector for ECDSA signing.
-///
-/// secp256k1 is today's Cosmos/EVM family. secp256r1 (P-256) covers ICP, Sui /
-/// Aptos alt-schemes, EIP-7212 passkey-backed smart accounts, and Starknet P-256
-/// accounts — no chain implementation today, but the HSM layer is wired for it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EcdsaCurve {
     Secp256k1,
@@ -45,66 +38,66 @@ impl EcdsaCurve {
 
 /// A handle to the YubiHSM2, shared across axum handlers.
 #[derive(Clone)]
-pub struct Hsm {
+pub struct YubiVault {
     inner: Arc<Mutex<Client>>,
     auth_key_id: u16,
+    vault_name: String,
 }
 
-impl Hsm {
-    /// Build an HSM handle talking to `yubihsm-connector` at the given URL.
-    ///
-    /// `reconnect=true` is pinned by design (TMKMS pattern): transient USB
-    /// disconnects self-heal on the next request rather than requiring the
-    /// service to be restarted.
+impl YubiVault {
     pub fn open_http(connector_url: &str, auth_key_id: u16, password: &[u8]) -> Result<Self> {
         let config = parse_http_config(connector_url)?;
         let connector = Connector::http(&config);
-        Self::open(connector, auth_key_id, password)
+        Self::open_named(connector, auth_key_id, password, "yubihsm")
     }
 
-    /// Build an HSM handle talking to a USB-attached device directly.
     pub fn open_usb(auth_key_id: u16, password: &[u8]) -> Result<Self> {
         let connector = Connector::usb(&UsbConfig::default());
-        Self::open(connector, auth_key_id, password)
+        Self::open_named(connector, auth_key_id, password, "yubihsm")
     }
 
-    /// Build an HSM handle backed by the in-process MockHsm for tests.
     pub fn open_mock(auth_key_id: u16, password: &[u8]) -> Result<Self> {
         let connector = Connector::mockhsm();
-        Self::open(connector, auth_key_id, password)
+        Self::open_named(connector, auth_key_id, password, "mockhsm")
     }
 
-    fn open(connector: Connector, auth_key_id: u16, password: &[u8]) -> Result<Self> {
+    fn open_named(
+        connector: Connector,
+        auth_key_id: u16,
+        password: &[u8],
+        name: impl Into<String>,
+    ) -> Result<Self> {
         let creds = Credentials::from_password(auth_key_id, password);
         let client = Client::open(connector, creds, true)
             .map_err(|e| anyhow!("yubihsm open failed: {e}"))?;
         Ok(Self {
             inner: Arc::new(Mutex::new(client)),
             auth_key_id,
+            vault_name: name.into(),
         })
     }
 
-    /// Wrap a pre-constructed client (used after `openkms setup`-style flows
-    /// that want to keep a live authenticated session around).
     pub fn from_client(client: Client, auth_key_id: u16) -> Self {
         Self {
             inner: Arc::new(Mutex::new(client)),
             auth_key_id,
+            vault_name: "yubihsm".to_string(),
         }
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.vault_name = name.into();
+        self
     }
 
     pub fn auth_key_id(&self) -> u16 {
         self.auth_key_id
     }
 
-    /// Low-level borrow of the client mutex (for CLI / ceremony code that
-    /// needs to invoke capabilities the runtime doesn't use — e.g. `setup`,
-    /// `backup`, `restore`).
     pub fn client(&self) -> Arc<Mutex<Client>> {
         self.inner.clone()
     }
 
-    /// Return the raw public-key bytes for an asymmetric object.
     pub async fn get_public_key(&self, key_id: u16) -> Result<PublicKey> {
         let guard = self.inner.lock().await;
         guard
@@ -112,7 +105,6 @@ impl Hsm {
             .map_err(|e| anyhow!("get_public_key({key_id}) failed: {e}"))
     }
 
-    /// Return the Ed25519 public key for a signing object.
     pub async fn get_ed25519_pubkey(&self, key_id: u16) -> Result<[u8; 32]> {
         let pk = self.get_public_key(key_id).await?;
         if pk.algorithm != AsymmetricAlg::Ed25519 {
@@ -132,8 +124,6 @@ impl Hsm {
         Ok(out)
     }
 
-    /// Return the secp256k1 public key as a 65-byte uncompressed SEC1 point
-    /// (with leading 0x04 prepended — YubiHSM2 returns only `x || y`).
     pub async fn get_secp256k1_pubkey_uncompressed(&self, key_id: u16) -> Result<[u8; 65]> {
         let pk = self.get_public_key(key_id).await?;
         if pk.algorithm != AsymmetricAlg::EcK256 {
@@ -154,15 +144,11 @@ impl Hsm {
         Ok(out)
     }
 
-    /// Return the compressed secp256k1 public key (33 bytes, `02|03 || x`).
-    /// Cosmos SDK public keys are this form.
     pub async fn get_secp256k1_pubkey_compressed(&self, key_id: u16) -> Result<[u8; 33]> {
         let uncompressed = self.get_secp256k1_pubkey_uncompressed(key_id).await?;
         compress_secp256k1(&uncompressed)
     }
 
-    /// Sign arbitrary message bytes with an Ed25519 key. YubiHSM2 hashes
-    /// internally per RFC 8032.
     pub async fn sign_ed25519(&self, key_id: u16, message: &[u8]) -> Result<[u8; 64]> {
         let guard = self.inner.lock().await;
         let sig = guard
@@ -174,17 +160,13 @@ impl Hsm {
         Ok(out)
     }
 
-    /// Sign a 32-byte prehash with ECDSA over the selected curve. Returns the
-    /// DER-encoded signature straight from the HSM; normalize / convert in
-    /// [`crate::sig`].
     pub async fn sign_ecdsa_prehashed(
         &self,
         key_id: u16,
         curve: EcdsaCurve,
         digest: &[u8; 32],
     ) -> Result<Vec<u8>> {
-        let _ = curve; // curve is determined by the object on the HSM; kept in
-        // the signature so callers record which curve they expect.
+        let _ = curve;
         let guard = self.inner.lock().await;
         let der = guard
             .sign_ecdsa_prehash_raw(key_id, digest.as_slice())
@@ -192,7 +174,6 @@ impl Hsm {
         Ok(der)
     }
 
-    /// Pull `len` bytes of entropy from the HSM's on-chip TRNG.
     pub async fn get_pseudo_random(&self, len: usize) -> Result<Vec<u8>> {
         let guard = self.inner.lock().await;
         guard
@@ -200,10 +181,91 @@ impl Hsm {
             .map_err(|e| anyhow!("get_pseudo_random({len}) failed: {e}"))
     }
 
-    /// Ping the HSM for liveness.
     pub async fn ping(&self) -> bool {
         let guard = self.inner.lock().await;
         guard.ping().is_ok()
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct YubiConfig {
+    #[serde(default)]
+    connector_url: Option<String>,
+    auth_key_id: u16,
+    #[serde(default)]
+    password_file: Option<std::path::PathBuf>,
+    #[serde(default)]
+    mock: bool,
+}
+
+pub fn register(m: &mut std::collections::HashMap<&'static str, super::BuildFn>) {
+    m.insert("yubihsm", build);
+}
+
+fn build(name: &str, table: &toml::Value) -> Result<Arc<dyn SigningVault>> {
+    let conf: YubiConfig = table.clone().try_into().context("invalid yubihsm vault config")?;
+    let password = if conf.mock {
+        Zeroizing::new(b"password".to_vec())
+    } else {
+        let path = conf
+            .password_file
+            .as_ref()
+            .ok_or_else(|| anyhow!("yubihsm vault: password_file is required unless mock = true"))?;
+        Config::read_hsm_password_file(path)?
+    };
+    let vault = if conf.mock {
+        YubiVault::open_mock(conf.auth_key_id, password.as_slice())?
+    } else {
+        let url = conf
+            .connector_url
+            .as_deref()
+            .ok_or_else(|| anyhow!("yubihsm vault: connector_url is required unless mock = true"))?;
+        YubiVault::open_http(url, conf.auth_key_id, password.as_slice())?
+    }
+    .with_name(name);
+    Ok(Arc::new(vault))
+}
+
+#[async_trait]
+impl SigningVault for YubiVault {
+    fn name(&self) -> &str {
+        &self.vault_name
+    }
+
+    fn driver(&self) -> &'static str {
+        "yubihsm"
+    }
+
+    async fn ready(&self) -> bool {
+        self.ping().await
+    }
+
+    async fn ed25519_pubkey(&self, key_id: &KeyId) -> Result<[u8; 32]> {
+        self.get_ed25519_pubkey(key_id.yubi_object_id()?).await
+    }
+
+    async fn secp256k1_pubkey_compressed(&self, key_id: &KeyId) -> Result<[u8; 33]> {
+        self.get_secp256k1_pubkey_compressed(key_id.yubi_object_id()?)
+            .await
+    }
+
+    async fn secp256k1_pubkey_uncompressed(&self, key_id: &KeyId) -> Result<[u8; 65]> {
+        self.get_secp256k1_pubkey_uncompressed(key_id.yubi_object_id()?)
+            .await
+    }
+
+    async fn sign_ed25519(&self, key_id: &KeyId, message: &[u8]) -> Result<[u8; 64]> {
+        self.sign_ed25519(key_id.yubi_object_id()?, message).await
+    }
+
+    async fn sign_ecdsa_prehashed(
+        &self,
+        key_id: &KeyId,
+        curve: EcdsaCurve,
+        digest: &[u8; 32],
+    ) -> Result<Vec<u8>> {
+        self.sign_ecdsa_prehashed(key_id.yubi_object_id()?, curve, digest)
+            .await
     }
 }
 
@@ -221,8 +283,6 @@ fn parse_http_config(url: &str) -> Result<HttpConfig> {
     Ok(config)
 }
 
-/// Convert an uncompressed SEC1 secp256k1 point (65 bytes, `04 || x || y`) to
-/// its 33-byte compressed form (`02 || x` if y even, `03 || x` if y odd).
 pub fn compress_secp256k1(uncompressed: &[u8; 65]) -> Result<[u8; 33]> {
     if uncompressed[0] != 0x04 {
         return Err(anyhow!("expected uncompressed SEC1 tag 0x04"));
@@ -237,21 +297,15 @@ pub fn compress_secp256k1(uncompressed: &[u8; 65]) -> Result<[u8; 33]> {
     Ok(out)
 }
 
-// Small shim so we can parse a URL without pulling a full `url` crate dep for
-// this one use — HTTP is the `http` crate's `Uri` which is already in the tree
-// via axum/hyper.
 mod http {
     pub use ::http::Uri;
 }
 
-// Silence unused-import warnings when optional sub-modules are not compiled.
 #[allow(unused_imports)]
 use asymmetric as _;
 #[allow(unused_imports)]
 use authentication as _;
 
-/// Shared `yubihsm` re-exports the rest of the crate reaches for when talking
-/// directly to the HSM (CLI, ceremony, backup/restore).
 pub mod hsm_types {
     pub use yubihsm::{
         Capability, Client, Connector, Credentials, Domain,
@@ -262,27 +316,13 @@ pub mod hsm_types {
     };
 }
 
-/// Conventional object-IDs used by openKMS's ceremony (mirrors TMKMS).
 pub mod ids {
     pub const CEREMONY_AUTH_KEY_ID: u16 = 1;
     pub const PROVISIONER_AUTH_KEY_ID: u16 = 2;
     pub const SIGNER_AUTH_KEY_ID: u16 = 3;
-    /// Object id for the AES wrap key (must not collide with [`CEREMONY_AUTH_KEY_ID`]).
     pub const WRAP_KEY_ID: u16 = 4;
 }
 
-/// Non-delegated capabilities for the `openkms-provisioner` authentication key
-/// installed during the `openkms setup` command (while authenticated as the
-/// factory default auth key, or when re-provisioning after a full device reset).
-///
-/// Must include `Capability::RESET_DEVICE`: when setup reconnects using
-/// provisioner recovery (slot 1 empty, auth key #2 present), this session must
-/// be allowed to run [`yubihsm::Client::reset_device`]. The upstream `yubihsm`
-/// crate logs send failures at debug level only, so missing this permission
-/// surfaces as “auth key not found” for slot 1 after an apparent reset.
-///
-/// Must include `Capability::GENERATE_ASYMMETRIC_KEY` for `generate_asymmetric_key`
-/// (`keys generate`); `Capability::PUT_ASYMMETRIC_KEY` alone covers only import (`keys provision`).
 pub fn provisioner_auth_capabilities_setup() -> yubihsm::Capability {
     use yubihsm::Capability as C;
     C::GENERATE_ASYMMETRIC_KEY
@@ -302,7 +342,7 @@ mod tests {
 
     #[tokio::test]
     async fn mock_hsm_ping_and_pseudo_random() {
-        let hsm = Hsm::open_mock(1, b"password").expect("open mock");
+        let hsm = YubiVault::open_mock(1, b"password").expect("open mock");
         assert!(hsm.ping().await, "mockhsm should ping");
         let r = hsm.get_pseudo_random(16).await.expect("pseudo random");
         assert_eq!(r.len(), 16);
@@ -311,14 +351,8 @@ mod tests {
     #[test]
     fn provisioner_setup_capabilities_include_reset_and_generate() {
         let c = provisioner_auth_capabilities_setup();
-        assert!(
-            c.contains(yubihsm::Capability::RESET_DEVICE),
-            "provisioner must be able to factory-reset when setup uses auth #2 recovery"
-        );
-        assert!(
-            c.contains(yubihsm::Capability::GENERATE_ASYMMETRIC_KEY),
-            "provisioner must run generate_asymmetric_key for keys generate"
-        );
+        assert!(c.contains(yubihsm::Capability::RESET_DEVICE));
+        assert!(c.contains(yubihsm::Capability::GENERATE_ASYMMETRIC_KEY));
     }
 
     #[test]
@@ -335,14 +369,11 @@ mod tests {
 
     #[test]
     fn compress_point_parity() {
-        // y is even (trailing byte 0x02) -> prefix 0x02
         let mut pt = [0u8; 65];
         pt[0] = 0x04;
         pt[64] = 0x02;
         let c = compress_secp256k1(&pt).unwrap();
         assert_eq!(c[0], 0x02);
-
-        // y is odd -> prefix 0x03
         pt[64] = 0x03;
         let c = compress_secp256k1(&pt).unwrap();
         assert_eq!(c[0], 0x03);

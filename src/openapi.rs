@@ -222,13 +222,13 @@ pub fn spec() -> Value {
             "schemas": {
                 "Health": {
                     "type": "object",
-                    "required": ["status", "hsm_up"],
+                    "required": ["status", "vault_up"],
                     "properties": {
                         "status": {
                             "type": "string",
                             "const": "ok"
                         },
-                        "hsm_up": {
+                        "vault_up": {
                             "type": ["boolean", "null"],
                             "description": "Null on the first response after process start; boolean thereafter."
                         }
@@ -236,7 +236,7 @@ pub fn spec() -> Value {
                 },
                 "KeySummary": {
                     "type": "object",
-                    "required": ["label", "chain", "address", "enabled", "object_id", "derivation_path"],
+                    "required": ["label", "chain", "address", "enabled", "vault", "key_id", "derivation_path"],
                     "properties": {
                         "label": { "type": "string" },
                         "chain": {
@@ -245,11 +245,8 @@ pub fn spec() -> Value {
                         },
                         "address": { "type": "string" },
                         "enabled": { "type": "boolean" },
-                        "object_id": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "maximum": 65535
-                        },
+                        "vault": { "type": "string" },
+                        "key_id": { "type": "string" },
                         "derivation_path": {
                             "type": ["string", "null"],
                             "examples": ["m/44'/118'/0'/0/0"]
@@ -325,7 +322,7 @@ pub fn spec() -> Value {
                 },
                 "PolicySnapshot": {
                     "type": "object",
-                    "required": ["label", "chain", "address", "object_id", "derivation_path", "effective_enabled", "policy", "runtime"],
+                    "required": ["label", "chain", "address", "vault", "key_id", "derivation_path", "effective_enabled", "policy", "runtime"],
                     "properties": {
                         "label": { "type": "string" },
                         "chain": {
@@ -333,11 +330,8 @@ pub fn spec() -> Value {
                             "enum": ["solana", "cosmos", "unknown"]
                         },
                         "address": { "type": "string" },
-                        "object_id": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "maximum": 65535
-                        },
+                        "vault": { "type": "string" },
+                        "key_id": { "type": "string" },
                         "derivation_path": { "type": ["string", "null"] },
                         "effective_enabled": { "type": "boolean" },
                         "policy": { "$ref": "#/components/schemas/KeyPolicy" },

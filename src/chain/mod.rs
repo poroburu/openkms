@@ -9,7 +9,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{config::KeyDef, hsm::Hsm};
+use crate::{config::KeyDef, vault::{KeyId, SigningVault}};
 
 pub mod cosmos;
 pub mod solana;
@@ -168,8 +168,9 @@ pub trait ChainSigner: Send + Sync + 'static {
 
     async fn sign(
         &self,
-        hsm: &Hsm,
+        vault: &dyn SigningVault,
         key: &KeyDef,
+        key_id: &KeyId,
         intent: Self::Intent,
     ) -> ChainResult<Self::Response>;
 }

@@ -21,7 +21,7 @@ use crate::{
         SignRequest, TokenRef, Transfer,
     },
     config::{AddressStyle, KeyDef},
-    hsm::{EcdsaCurve, Hsm},
+    vault::{EcdsaCurve, KeyId, SigningVault},
     sig::secp256k1_der_to_compact_low_s,
 };
 
@@ -100,13 +100,14 @@ pub struct CosmosSigner {
 }
 
 impl CosmosSigner {
-    pub async fn from_hsm(
-        hsm: &Hsm,
+    pub async fn from_vault(
+        vault: &dyn SigningVault,
         key: &KeyDef,
+        key_id: &KeyId,
         accepted_type_urls: impl IntoIterator<Item = String>,
     ) -> anyhow::Result<Self> {
-        let compressed = hsm.get_secp256k1_pubkey_compressed(key.object_id).await?;
-        let uncompressed = hsm.get_secp256k1_pubkey_uncompressed(key.object_id).await?;
+        let compressed = vault.secp256k1_pubkey_compressed(key_id).await?;
+        let uncompressed = vault.secp256k1_pubkey_uncompressed(key_id).await?;
         let hrp = key
             .default_hrp
             .clone()
@@ -222,12 +223,13 @@ impl ChainSigner for CosmosSigner {
 
     async fn sign(
         &self,
-        hsm: &Hsm,
-        key: &KeyDef,
+        vault: &dyn SigningVault,
+        _key: &KeyDef,
+        key_id: &KeyId,
         intent: Self::Intent,
     ) -> ChainResult<Self::Response> {
-        let der = hsm
-            .sign_ecdsa_prehashed(key.object_id, EcdsaCurve::Secp256k1, &intent.prehash)
+        let der = vault
+            .sign_ecdsa_prehashed(key_id, EcdsaCurve::Secp256k1, &intent.prehash)
             .await
             .map_err(ChainError::Hsm)?;
         let compact = secp256k1_der_to_compact_low_s(&der)
@@ -539,7 +541,8 @@ mod tests {
         let key = KeyDef {
             label: "c".into(),
             chain: Chain::Cosmos,
-            object_id: 1,
+            vault: "hsm".into(),
+            key_id: "0x0001".into(),
             derivation_path: None,
             address_style: AddressStyle::Cosmos,
             default_hrp: Some("cosmos".into()),
@@ -576,7 +579,8 @@ mod tests {
         let key = KeyDef {
             label: "c".into(),
             chain: Chain::Cosmos,
-            object_id: 1,
+            vault: "hsm".into(),
+            key_id: "0x0001".into(),
             derivation_path: None,
             address_style: AddressStyle::Cosmos,
             default_hrp: Some("cosmos".into()),
@@ -613,7 +617,8 @@ mod tests {
         let key = KeyDef {
             label: "c".into(),
             chain: Chain::Cosmos,
-            object_id: 1,
+            vault: "hsm".into(),
+            key_id: "0x0001".into(),
             derivation_path: None,
             address_style: AddressStyle::Cosmos,
             default_hrp: Some("cosmos".into()),

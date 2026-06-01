@@ -5,7 +5,7 @@ use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use clap::Args;
 use openkms::{
     config::Config,
-    hsm::{hsm_types as H, ids},
+    vault::{hsm_types as H, ids, parse_u16_key_id},
 };
 
 use crate::{CliCtx, open_hsm, secure_perms};
@@ -29,11 +29,12 @@ pub(crate) async fn backup(cli: &CliCtx, args: BackupArgs) -> Result<()> {
     let guard = client.lock().await;
     let mut exported = Vec::new();
     for k in &cfg.keys {
+        let object_id = parse_u16_key_id(&k.key_id)?;
         let msg = guard
-            .export_wrapped(ids::WRAP_KEY_ID, H::ObjectType::AsymmetricKey, k.object_id)
+            .export_wrapped(ids::WRAP_KEY_ID, H::ObjectType::AsymmetricKey, object_id)
             .map_err(|e| anyhow!("export_wrapped({:?}): {e}", k.label))?;
         exported.push(ExportedKey {
-            object_id: k.object_id,
+            object_id,
             nonce: B64.encode(msg.nonce.0.as_slice()),
             ciphertext: B64.encode(&msg.ciphertext),
         });

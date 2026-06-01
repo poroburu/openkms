@@ -11,7 +11,7 @@
 //!     than at first sign.
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -25,7 +25,8 @@ use crate::chain::Chain;
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Config {
     pub server: ServerConfig,
-    pub hsm: HsmConfig,
+    #[serde(default)]
+    pub vaults: HashMap<String, toml::Value>,
     pub audit: AuditConfig,
     #[serde(default)]
     pub cosmos: CosmosConfig,
@@ -52,13 +53,6 @@ fn default_inflight_limit() -> usize {
 
 fn default_replay_window_secs() -> u64 {
     120
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct HsmConfig {
-    pub connector_url: String,
-    pub auth_key_id: u16,
-    pub password_file: PathBuf,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -90,7 +84,10 @@ fn default_cosmos_pubkey_type_urls() -> Vec<String> {
 pub struct KeyDef {
     pub label: String,
     pub chain: Chain,
-    pub object_id: u16,
+    /// Logical vault name matching a key in [`Config::vaults`].
+    pub vault: String,
+    /// Driver-specific key identifier (YubiHSM object id or file vault label).
+    pub key_id: String,
     #[serde(default)]
     pub derivation_path: Option<String>,
     #[serde(default)]
@@ -289,24 +286,93 @@ impl Config {
         Ok(Zeroizing::new(t.as_bytes().to_vec()))
     }
 
+    /// Return the driver string for a named vault.
+    pub fn vault_driver(&self, name: &str) -> Result<&str> {
+        let table = self
+            .vaults
+            .get(name)
+            .ok_or_else(|| anyhow!("unknown vault {name:?}"))?;
+        table
+            .get("driver")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow!("vault {name:?}: missing driver"))
+    }
+
+    /// Return the TOML table for the first configured `yubihsm` vault (prefers name `hsm`).
+    pub fn yubihsm_vault_table(&self) -> Result<&toml::Value> {
+        if let Some(table) = self.vaults.get("hsm") {
+            if self.vault_driver("hsm")? == "yubihsm" {
+                return Ok(table);
+            }
+        }
+        for (name, table) in &self.vaults {
+            if self.vault_driver(name)? == "yubihsm" {
+                return Ok(table);
+            }
+        }
+        bail!("no [vaults.*] block with driver = \"yubihsm\" found")
+    }
+
+    pub fn yubihsm_connector_url(&self) -> Result<String> {
+        self.yubihsm_vault_table()?
+            .get("connector_url")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .ok_or_else(|| anyhow!("yubihsm vault: connector_url is required unless mock = true"))
+    }
+
+    pub fn yubihsm_auth_key_id(&self) -> Result<u16> {
+        self.yubihsm_vault_table()?
+            .get("auth_key_id")
+            .and_then(|v| v.as_integer())
+            .and_then(|i| u16::try_from(i).ok())
+            .ok_or_else(|| anyhow!("yubihsm vault: invalid or missing auth_key_id"))
+    }
+
+    pub fn yubihsm_password_file(&self) -> Result<PathBuf> {
+        self.yubihsm_vault_table()?
+            .get("password_file")
+            .and_then(|v| v.as_str())
+            .map(PathBuf::from)
+            .ok_or_else(|| anyhow!("yubihsm vault: missing password_file"))
+    }
+
     pub fn validate(&self) -> Result<()> {
+        if self.vaults.is_empty() {
+            bail!("config must declare at least one [vaults.*] block");
+        }
+
         // Enforce 0600 on all secret files.
         enforce_mode_0600(&self.server.signer_token_file)?;
         enforce_mode_0600(&self.server.admin_token_file)?;
-        enforce_mode_0600(&self.hsm.password_file)?;
         if let Some(p) = self.audit.hmac_key_file.as_ref() {
             enforce_mode_0600(p)?;
         }
 
-        // Reject duplicate labels or object-ids.
+        for (name, table) in &self.vaults {
+            let driver = self.vault_driver(name)?;
+            validate_vault_config(name, driver, table)?;
+        }
+
+        // Reject duplicate labels or (vault, key_id) pairs.
         let mut labels = HashSet::new();
-        let mut ids = HashSet::new();
+        let mut key_refs = HashSet::new();
         for k in &self.keys {
             if !labels.insert(&k.label) {
                 bail!("duplicate key label {:?}", k.label);
             }
-            if !ids.insert(k.object_id) {
-                bail!("duplicate key object_id 0x{:04x}", k.object_id);
+            self.vault_driver(&k.vault)
+                .with_context(|| format!("key {:?} references unknown vault", k.label))?;
+            let driver = self.vault_driver(&k.vault)?;
+            crate::vault::parse_key_id(driver, &k.key_id)
+                .with_context(|| format!("key {:?}: invalid key_id", k.label))?;
+            if !key_refs.insert((k.vault.clone(), k.key_id.clone())) {
+                bail!(
+                    "duplicate key vault/key_id pair vault={:?} key_id={:?}",
+                    k.vault,
+                    k.key_id
+                );
             }
             validate_key(k)?;
         }
@@ -377,8 +443,42 @@ fn validate_key(k: &KeyDef) -> Result<()> {
     Ok(())
 }
 
+fn validate_vault_config(name: &str, driver: &str, table: &toml::Value) -> Result<()> {
+    match driver {
+        "yubihsm" => {
+            let mock = table.get("mock").and_then(|v| v.as_bool()).unwrap_or(false);
+            if !mock {
+                let password_file = table
+                    .get("password_file")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| anyhow!("vault {name:?}: yubihsm requires password_file"))?;
+                enforce_mode_0600(Path::new(password_file))?;
+            }
+            if !mock
+                && table
+                    .get("connector_url")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .is_none()
+            {
+                bail!("vault {name:?}: yubihsm requires connector_url unless mock = true");
+            }
+        }
+        "file" => {
+            let path = table
+                .get("path")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow!("vault {name:?}: file driver requires path"))?;
+            enforce_mode_0600(Path::new(path))?;
+        }
+        "awskms" | "azure" | "cloudkms" | "hashicorpvault" | "nitro" | "confidentialspace" => {}
+        other => bail!("vault {name:?}: unknown driver {other:?}"),
+    }
+    Ok(())
+}
+
 /// Reject files that are readable by group or other.
-fn enforce_mode_0600(path: &std::path::Path) -> Result<()> {
+pub(crate) fn enforce_mode_0600(path: &std::path::Path) -> Result<()> {
     if !path.exists() {
         return Err(anyhow!("secret file does not exist: {path:?}"));
     }
@@ -396,6 +496,27 @@ fn enforce_mode_0600(path: &std::path::Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Example / integration-test `[vaults.hsm]` table using in-process mockhsm.
+pub fn mock_yubihsm_vaults(_password_file: &Path) -> HashMap<String, toml::Value> {
+    HashMap::from([(
+        "hsm".to_string(),
+        toml::Value::try_from(toml::map::Map::from_iter([
+            (
+                "driver".to_string(),
+                toml::Value::String("yubihsm".to_string()),
+            ),
+            ("mock".to_string(), toml::Value::Boolean(true)),
+            ("auth_key_id".to_string(), toml::Value::Integer(1)),
+        ]))
+        .expect("mock yubihsm vault table"),
+    )])
+}
+
+#[cfg(test)]
+pub(crate) fn test_mock_vaults() -> HashMap<String, toml::Value> {
+    mock_yubihsm_vaults(Path::new("/tmp/x"))
 }
 
 #[cfg(test)]
@@ -427,9 +548,10 @@ listen = "127.0.0.1:8443"
 signer_token_file = "{}"
 admin_token_file  = "{}"
 
-[hsm]
-connector_url = "http://127.0.0.1:12345"
-auth_key_id   = 3
+[vaults.hsm]
+driver = "yubihsm"
+mock = true
+auth_key_id = 1
 password_file = "{}"
 
 [audit]
@@ -438,7 +560,8 @@ path = "/tmp/openkms-audit.log"
 [[keys]]
 label = "sol-mm-0"
 chain = "solana"
-object_id = 0x0100
+vault = "hsm"
+key_id = "0x0100"
 derivation_path = "m/44'/501'/0'/0'"
 
 [keys.policy]
@@ -472,7 +595,8 @@ id = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4"
 [[keys]]
 label = "sol-mm-0"
 chain = "solana"
-object_id = 0x0101
+vault = "hsm"
+key_id = "0x0101"
 
 [keys.policy]
 [[keys.policy.allowed_programs]]
@@ -494,7 +618,8 @@ id = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4"
 [[keys]]
 label = "cosmos-mm-0"
 chain = "cosmos"
-object_id = 0x0200
+vault = "hsm"
+key_id = "0x0200"
 
 [keys.policy]
 max_signs_per_minute = 5

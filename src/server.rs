@@ -46,16 +46,17 @@ use crate::{
         solana::SolanaSigner,
     },
     config::{Config, KeyDef, KeyPolicy, KeyPolicyPatch},
-    hsm::Hsm,
     metrics::Metrics,
     policy::{DefaultPolicyEngine, PolicyEngine, PolicyError, PolicyRuntimeSnapshot},
     replay::{CachedResponse, ReplayCache},
+    vault::{KeyId, SigningVault, parse_key_id},
 };
 
 /// The application state shared by every handler.
 #[derive(Clone)]
 pub struct AppState {
-    pub hsm: Hsm,
+    pub vaults: Arc<HashMap<String, Arc<dyn SigningVault>>>,
+    pub key_ids: Arc<HashMap<String, KeyId>>,
     pub policy: Arc<DefaultPolicyEngine>,
     pub audit: AuditLog,
     pub admin: AdminStore,
@@ -67,18 +68,33 @@ pub struct AppState {
     pub signer_token: Arc<String>,
     pub admin_token: Arc<String>,
     pub config: Arc<Config>,
-    /// After the first `/health` response is produced, further `/health` calls include `hsm_up`
+    /// After the first `/health` response is produced, further `/health` calls include `vault_up`
     /// as a boolean. The first response uses JSON `null` so clients can distinguish "no probe
-    /// has been reported yet" from `false` (probe ran and HSM was down).
+    /// has been reported yet" from `false` (probe ran and vault was down).
     pub health_prior_response_sent: Arc<AtomicBool>,
 }
 
 impl AppState {
-    /// Build state from a `Config` and an open HSM. Construction touches the
-    /// HSM once per key to fetch pubkeys.
+    fn health_vault(state: &Self) -> Option<Arc<dyn SigningVault>> {
+        state
+            .vaults
+            .get("hsm")
+            .cloned()
+            .or_else(|| state.vaults.values().next().cloned())
+    }
+
+    fn vault_for_key(&self, key: &KeyDef) -> Result<Arc<dyn SigningVault>> {
+        self.vaults
+            .get(&key.vault)
+            .cloned()
+            .ok_or_else(|| anyhow!("unknown vault {:?}", key.vault))
+    }
+
+    /// Build state from a `Config` and open vaults. Construction touches each
+    /// key's vault once to fetch pubkeys.
     pub async fn build(
         config: Config,
-        hsm: Hsm,
+        vaults: HashMap<String, Arc<dyn SigningVault>>,
         signer_token: String,
         admin_token: String,
     ) -> Result<Self> {
@@ -99,21 +115,31 @@ impl AppState {
         );
 
         let mut keys = HashMap::new();
+        let mut key_ids = HashMap::new();
         let mut solana_signers: HashMap<String, Arc<SolanaSigner>> = HashMap::new();
         let mut cosmos_signers: HashMap<String, Arc<CosmosSigner>> = HashMap::new();
         for k in &config.keys {
             keys.insert(k.label.clone(), k.clone());
+            let vault = vaults
+                .get(&k.vault)
+                .ok_or_else(|| anyhow!("key {:?} references unknown vault {:?}", k.label, k.vault))?;
+            let driver = config.vault_driver(&k.vault)?;
+            let key_id = parse_key_id(driver, &k.key_id)?;
+            key_ids.insert(k.label.clone(), key_id.clone());
             match k.chain {
                 Chain::Solana => {
-                    let s = SolanaSigner::from_hsm(&hsm, k).await.with_context(|| {
-                        format!("failed to initialize Solana signer for key {:?}", k.label)
-                    })?;
+                    let s = SolanaSigner::from_vault(vault.as_ref(), k, &key_id)
+                        .await
+                        .with_context(|| {
+                            format!("failed to initialize Solana signer for key {:?}", k.label)
+                        })?;
                     solana_signers.insert(k.label.clone(), Arc::new(s));
                 }
                 Chain::Cosmos => {
-                    let s = CosmosSigner::from_hsm(
-                        &hsm,
+                    let s = CosmosSigner::from_vault(
+                        vault.as_ref(),
                         k,
+                        &key_id,
                         config.cosmos.accepted_pubkey_type_urls.iter().cloned(),
                     )
                     .await
@@ -129,7 +155,8 @@ impl AppState {
         }
 
         Ok(Self {
-            hsm,
+            vaults: Arc::new(vaults),
+            key_ids: Arc::new(key_ids),
             policy,
             audit,
             admin,
@@ -206,20 +233,24 @@ pub async fn serve(state: AppState) -> Result<()> {
 #[derive(Serialize)]
 struct HealthBody {
     status: &'static str,
-    /// `null` on the first `/health` response only (the HSM is still pinged); thereafter `true`/`false`.
-    hsm_up: Option<bool>,
+    /// `null` on the first `/health` response only; thereafter `true`/`false`.
+    vault_up: Option<bool>,
 }
 
 async fn health(State(state): State<AppState>) -> impl IntoResponse {
     let prior = state
         .health_prior_response_sent
         .swap(true, Ordering::SeqCst);
-    let up = state.hsm.ping().await;
-    state.metrics.hsm_up().set(if up { 1 } else { 0 });
-    let hsm_up = if prior { Some(up) } else { None };
+    let up = if let Some(vault) = AppState::health_vault(&state) {
+        vault.ready().await
+    } else {
+        false
+    };
+    state.metrics.vault_up().set(if up { 1 } else { 0 });
+    let vault_up = if prior { Some(up) } else { None };
     Json(HealthBody {
         status: "ok",
-        hsm_up,
+        vault_up,
     })
 }
 
@@ -229,7 +260,8 @@ struct KeySummary {
     chain: String,
     address: String,
     enabled: bool,
-    object_id: u16,
+    vault: String,
+    key_id: String,
     derivation_path: Option<String>,
 }
 
@@ -265,7 +297,8 @@ async fn list_keys(State(state): State<AppState>) -> axum::response::Response {
             chain: k.chain.as_str().to_string(),
             address,
             enabled,
-            object_id: k.object_id,
+            vault: k.vault.clone(),
+            key_id: k.key_id.clone(),
             derivation_path: k.derivation_path.clone(),
         });
     }
@@ -277,7 +310,8 @@ struct PolicySnapshotBody {
     label: String,
     chain: String,
     address: String,
-    object_id: u16,
+    vault: String,
+    key_id: String,
     derivation_path: Option<String>,
     effective_enabled: bool,
     policy: KeyPolicy,
@@ -366,7 +400,8 @@ fn policy_body(
         label: snapshot.label.clone(),
         chain: snapshot.chain.as_str().to_string(),
         address: key_address(state, key),
-        object_id: key.object_id,
+        vault: key.vault.clone(),
+        key_id: key.key_id.clone(),
         derivation_path: key.derivation_path.clone(),
         effective_enabled: snapshot.runtime.effective_enabled,
         policy: snapshot.policy,
@@ -540,18 +575,31 @@ where
     // intent by calling sign(). We fill in the signature hash below.
     let mut allow_rec = AuditLog::build_allow(&request_id, &key.label, chain, &intent, b"");
 
-    // HSM-sign. Each concrete ChainSigner impl returns its own Response type;
+    let vault = match state.vault_for_key(&key) {
+        Ok(v) => v,
+        Err(e) => {
+            return json_err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string());
+        }
+    };
+    let key_id = match state.key_ids.get(&key.label) {
+        Some(id) => id,
+        None => {
+            return json_err(StatusCode::INTERNAL_SERVER_ERROR, "missing key_id for label");
+        }
+    };
+
+    // Vault-sign. Each concrete ChainSigner impl returns its own Response type;
     // we serialize it to a `serde_json::Value` to cache in the replay entry.
-    let response = match signer.sign(&state.hsm, &key, intent).await {
+    let response = match signer.sign(vault.as_ref(), &key, key_id, intent).await {
         Ok(r) => r,
         Err(ChainError::Hsm(e)) => {
             state
                 .metrics
                 .signer_errors_total()
-                .with_label_values(&[chain.as_str(), "hsm"])
+                .with_label_values(&[chain.as_str(), "vault"])
                 .inc();
-            warn!(%request_id, ?chain, key_label=%key.label, "hsm sign failed: {e}");
-            return json_err(StatusCode::INTERNAL_SERVER_ERROR, &format!("hsm: {e}"));
+            warn!(%request_id, ?chain, key_label=%key.label, "vault sign failed: {e}");
+            return json_err(StatusCode::INTERNAL_SERVER_ERROR, &format!("vault: {e}"));
         }
         Err(e) => {
             state
@@ -761,6 +809,9 @@ mod tests {
     use axum::http::Request;
     use tower::ServiceExt;
 
+    use crate::vault::{SigningVault, YubiVault};
+    use std::{collections::HashMap, sync::Arc};
+
     fn minimal_config() -> Config {
         Config {
             server: crate::config::ServerConfig {
@@ -770,11 +821,7 @@ mod tests {
                 inflight_limit: 1,
                 replay_window_secs: 1,
             },
-            hsm: crate::config::HsmConfig {
-                connector_url: "mock".into(),
-                auth_key_id: 1,
-                password_file: "/tmp/x".into(),
-            },
+            vaults: crate::config::test_mock_vaults(),
             audit: crate::config::AuditConfig {
                 path: std::env::temp_dir().join("openkms-test-audit.log"),
                 hmac_key_file: None,
@@ -785,12 +832,18 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn health_endpoint_reports_hsm_up() {
-        let hsm = Hsm::open_mock(1, b"password").unwrap();
-        let state = AppState::build(minimal_config(), hsm, "s".into(), "a".into())
+    async fn test_state(cfg: Config) -> AppState {
+        let vault: Arc<dyn SigningVault> =
+            Arc::new(YubiVault::open_mock(1, b"password").expect("mock vault"));
+        let vaults = HashMap::from([("hsm".to_string(), vault)]);
+        AppState::build(cfg, vaults, "s".into(), "a".into())
             .await
-            .unwrap();
+            .expect("state")
+    }
+
+    #[tokio::test]
+    async fn health_endpoint_reports_vault_up() {
+        let state = test_state(minimal_config()).await;
         let app = router(state);
         let resp = app
             .clone()
@@ -808,7 +861,7 @@ mod tests {
             .unwrap();
         let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(v["status"], "ok");
-        assert_eq!(v["hsm_up"], serde_json::Value::Null);
+        assert_eq!(v["vault_up"], serde_json::Value::Null);
 
         let resp2 = app
             .oneshot(
@@ -823,15 +876,12 @@ mod tests {
             .await
             .unwrap();
         let v2: serde_json::Value = serde_json::from_slice(&bytes2).unwrap();
-        assert_eq!(v2["hsm_up"], true);
+        assert_eq!(v2["vault_up"], true);
     }
 
     #[tokio::test]
     async fn metrics_endpoint_returns_prometheus_text() {
-        let hsm = Hsm::open_mock(1, b"password").unwrap();
-        let state = AppState::build(minimal_config(), hsm, "s".into(), "a".into())
-            .await
-            .unwrap();
+        let state = test_state(minimal_config()).await;
         let app = router(state);
         let resp = app
             .oneshot(
@@ -847,8 +897,11 @@ mod tests {
 
     #[tokio::test]
     async fn sign_solana_requires_bearer() {
-        let hsm = Hsm::open_mock(1, b"password").unwrap();
-        let state = AppState::build(minimal_config(), hsm, "signer-token".into(), "a".into())
+        let cfg = minimal_config();
+        let vault: Arc<dyn SigningVault> =
+            Arc::new(YubiVault::open_mock(1, b"password").expect("mock vault"));
+        let vaults = HashMap::from([("hsm".to_string(), vault)]);
+        let state = AppState::build(cfg, vaults, "signer-token".into(), "a".into())
             .await
             .unwrap();
         let app = router(state);

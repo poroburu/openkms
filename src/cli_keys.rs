@@ -7,7 +7,7 @@ use openkms::{
     chain::{Chain, cosmos::CosmosSigner, solana::SolanaSigner},
     config::Config,
     derive,
-    hsm::{hsm_types as H, ids},
+    vault::{hsm_types as H, ids, open_vaults, parse_key_id},
 };
 use zeroize::Zeroizing;
 
@@ -128,10 +128,11 @@ async fn list(cli: &CliCtx) -> Result<()> {
     let cfg = Config::load(&cli.config)?;
     for k in &cfg.keys {
         println!(
-            "{:<24}  chain={:<8}  object_id=0x{:04x}  path={}",
+            "{:<24}  chain={:<8}  vault={:<8}  key_id={:<10}  path={}",
             k.label,
             k.chain.as_str(),
-            k.object_id,
+            k.vault,
+            k.key_id,
             k.derivation_path.clone().unwrap_or_else(|| "-".into())
         );
     }
@@ -145,16 +146,22 @@ async fn address(cli: &CliCtx, label: &str) -> Result<()> {
         .iter()
         .find(|k| k.label == label)
         .ok_or_else(|| anyhow!("no key labelled {label:?}"))?;
-    let hsm = open_hsm(cli).await?;
+    let vaults = open_vaults(&cfg.vaults)?;
+    let vault = vaults
+        .get(&key.vault)
+        .ok_or_else(|| anyhow!("unknown vault {:?}", key.vault))?;
+    let driver = cfg.vault_driver(&key.vault)?;
+    let key_id = parse_key_id(driver, &key.key_id)?;
     match key.chain {
         Chain::Solana => {
-            let s = SolanaSigner::from_hsm(&hsm, key).await?;
+            let s = SolanaSigner::from_vault(vault.as_ref(), key, &key_id).await?;
             println!("{}", s.address);
         }
         Chain::Cosmos => {
-            let s = CosmosSigner::from_hsm(
-                &hsm,
+            let s = CosmosSigner::from_vault(
+                vault.as_ref(),
                 key,
+                &key_id,
                 cfg.cosmos.accepted_pubkey_type_urls.iter().cloned(),
             )
             .await?;

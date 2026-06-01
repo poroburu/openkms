@@ -5,7 +5,7 @@ use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use clap::{Args, Subcommand};
 use openkms::{
     derive::{self, mnemonic_to_seed},
-    hsm::ids,
+    vault::ids,
 };
 
 use crate::{read_optional_file, seed_to_fixed};
@@ -60,7 +60,7 @@ fn print_signer_password(args: &CeremonyMnemonicArgs) -> Result<()> {
     let secrets = derive::derive_ceremony(&seed_to_fixed(seed.as_slice()));
     println!("{}", hex::encode(secrets.signer_password.as_slice()));
     eprintln!(
-        "Put this single line in [hsm].password_file (0600), with auth_key_id 3, after `setup`."
+        "Put this single line in [vaults.hsm].password_file (0600), with auth_key_id 3, after `setup`."
     );
     Ok(())
 }
