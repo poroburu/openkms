@@ -18,4 +18,14 @@
 
   --okms-shadow-glow: 0 0 0 1px rgba(56, 189, 248, 0.18), 0 18px 48px -12px rgba(56, 189, 248, 0.32);
   --okms-shadow-card: 0 16px 36px -18px rgba(0, 0, 0, 0.55);
+
+  /* Grid + glass (collateral / social hero) */
+  --okms-grid-line: rgba(56, 189, 248, 0.07);
+  --okms-grid-size: 48px;
+
+  /* Video keynote / pay-demo hook (from hookKeynote in tokens.ts) */
+  --okms-hook-fg: #edf3f7;
+  --okms-hook-subhead: #32d5ff;
+  --okms-hook-good: #28e6a3;
+  --okms-hook-bad: #ff5353;
 }
