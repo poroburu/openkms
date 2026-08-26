@@ -1,0 +1,20 @@
+---
+description: Open work vs facts. Do not spray verdicts across parent and children.
+alwaysApply: true
+---
+
+# Open work vs git
+
+- Until a Linear workspace is attached, open work lives in git (PRs and whitepaper process docs). When Linear exists, it owns open work and decisions; close when decided, not when a PR exists. Git still owns facts.
+- Git = facts that would otherwise lie. One canonical file; pointers elsewhere.
+- PRs preferred. Do not merge or push to `main`/`master` without explicit user approval.
+- Do not file openKMS work on other Linear workspaces (`NEW`, `ONC`, `PER`).
+
+## Do not
+
+- Restate a decision in parent README and child docs in the same change.
+
+## Do
+
+- Edit the file that owns the fact, then bump the parent pin ([docs/pin-bump.md](docs/pin-bump.md)).
+- Point to [CONTRIBUTING.md](CONTRIBUTING.md) and `../openkms-whitepaper/coordination/git-workflow.md`.
